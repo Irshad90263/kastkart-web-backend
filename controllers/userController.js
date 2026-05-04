@@ -108,6 +108,7 @@ export const loginUser = async (req, res) => {
 
       return res.status(200).json({
         message: "OTP sent successfully",
+        otp:generatedOtp
       });
     }
 

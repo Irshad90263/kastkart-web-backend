@@ -1,6 +1,12 @@
 // controllers/categoryController.js
 import Category from "../models/Category.js";
 import Product from "../models/Product.js";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export const createCategory = async (req, res) => {
   try {
@@ -10,7 +16,20 @@ export const createCategory = async (req, res) => {
     const exists = await Category.findOne({ name });
     if (exists) return res.status(409).json({ message: "Category exists" });
 
-    const category = await Category.create({ name, description });
+    // 🔥 Image handling - SIRF YEH 5 LINES ADD
+    let imageData = null;
+    if (req.file) {
+      imageData = {
+        url: `${process.env.BASE_URL}/uploads/categories/${req.file.filename}`,
+        filename: req.file.filename
+      };
+    }
+
+    const category = await Category.create({ 
+      name, 
+      description,
+      image: imageData  // 🔥 YEH LINE ADD
+    });
     res.status(201).json({ message: "Category created", category });
   } catch (err) {
     console.error("createCategory error:", err);
@@ -55,7 +74,7 @@ export const updateCategory = async (req, res) => {
       (await Category.findById(idOrSlug));
     if (!category) return res.status(404).json({ message: "Not found" });
 
-    const { name, description, isActive } = req.body;
+    const { name, description, isActive, removeImage } = req.body; // 🔥 removeImage ADD
 
     if (name) {
       category.name = name;
@@ -67,6 +86,33 @@ export const updateCategory = async (req, res) => {
     }
     if (description !== undefined) category.description = description;
     if (isActive !== undefined) category.isActive = !!isActive;
+
+    // 🔥 IMAGE HANDLING - SIRF YEH 15 LINES ADD
+    if (removeImage === 'true' || removeImage === true) {
+      // Delete old image file
+      if (category.image && category.image.filename) {
+        const oldImagePath = path.join(__dirname, "..", "uploads", "categories", category.image.filename);
+        if (fs.existsSync(oldImagePath)) {
+          fs.unlinkSync(oldImagePath);
+        }
+      }
+      category.image = null;
+    }
+    
+    if (req.file) {
+      // Delete old image if exists
+      if (category.image && category.image.filename) {
+        const oldImagePath = path.join(__dirname, "..", "uploads", "categories", category.image.filename);
+        if (fs.existsSync(oldImagePath)) {
+          fs.unlinkSync(oldImagePath);
+        }
+      }
+      // Add new image
+      category.image = {
+        url: `${process.env.BASE_URL}/uploads/categories/${req.file.filename}`,
+        filename: req.file.filename
+      };
+    }
 
     await category.save();
     res.json({ message: "Category updated", category });
@@ -91,6 +137,14 @@ export const deleteCategory = async (req, res) => {
       return res
         .status(400)
         .json({ message: "Category has products, cannot delete" });
+    }
+
+    // 🔥 DELETE IMAGE FILE - SIRF YEH 6 LINES ADD
+    if (category.image && category.image.filename) {
+      const imagePath = path.join(__dirname, "..", "uploads", "categories", category.image.filename);
+      if (fs.existsSync(imagePath)) {
+        fs.unlinkSync(imagePath);
+      }
     }
 
     await Category.deleteOne({ _id: category._id });

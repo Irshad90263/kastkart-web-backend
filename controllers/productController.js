@@ -94,15 +94,51 @@ export const createProduct = async (req, res) => {
 // LIST
 export const listProducts = async (req, res) => {
   try {
-    const { status } = req.query;
+    const { status, sort = "", minPrice, maxPrice } = req.query;
+    
     let filter = {};
+    
+    // Status filter
     if (status === 'active') filter = { isActive: true };
     if (status === 'inactive') filter = { isActive: false };
+    if (!status) filter = { isActive: true }; // Default: only active products
+    
+    //  Price filter based on finalPrice
+    if (minPrice !== undefined || maxPrice !== undefined) {
+      filter.finalPrice = {};
+      if (minPrice) filter.finalPrice.$gte = Number(minPrice);
+      if (maxPrice) filter.finalPrice.$lte = Number(maxPrice);
+    }
+    
+    //  Sorting
+    let sortOption = { createdAt: -1 }; // Default: newest first
+    
+    if (sort === "price_asc") {
+      sortOption = { finalPrice: 1 };  // Low to High
+    } else if (sort === "price_desc") {
+      sortOption = { finalPrice: -1 }; // High to Low
+    } else if (sort === "newest") {
+      sortOption = { createdAt: -1 };
+    } else if (sort === "oldest") {
+      sortOption = { createdAt: 1 };
+    } else if (sort === "name_asc") {
+      sortOption = { name: 1 };
+    } else if (sort === "name_desc") {
+      sortOption = { name: -1 };
+    }
     
     const products = await Product.find(filter)
       .populate("category", "name slug")
-      .sort({ createdAt: -1 });
-    res.json(products);
+      .sort(sortOption);
+      
+    res.json({
+      products,
+      filters: {
+        minPrice: minPrice ? Number(minPrice) : null,
+        maxPrice: maxPrice ? Number(maxPrice) : null,
+        sort
+      }
+    });
   } catch (err) {
     console.error("listProducts error:", err);
     res.status(500).json({ message: "Server error" });
@@ -128,30 +164,87 @@ export const getProduct = async (req, res) => {
 };
 
 // category wise 
-// controllers/productController.js
 export const listProductsByCategory = async (req, res) => {
   try {
-    const { idOrSlug } = req.params;
-
-    const category = await Category.findById(idOrSlug);
-
-    if (!category) {
-      return res.status(404).json({ message: "Category not found" });
+    let { idOrSlug } = req.params;
+    const { sort = "", minPrice, maxPrice } = req.query;
+    
+    // 🔥 Multiple categories handle
+    let categoryIds = [];
+    
+    if (idOrSlug.includes(',')) {
+      const slugsOrIds = idOrSlug.split(',');
+      
+      for (const item of slugsOrIds) {
+        let cat = await Category.findOne({ slug: item });
+        if (!cat && item.match(/^[0-9a-fA-F]{24}$/)) {
+          cat = await Category.findById(item);
+        }
+        if (cat) categoryIds.push(cat._id);
+      }
+    } else {
+      let category = await Category.findOne({ slug: idOrSlug });
+      if (!category && idOrSlug.match(/^[0-9a-fA-F]{24}$/)) {
+        category = await Category.findById(idOrSlug);
+      }
+      if (!category) {
+        return res.status(404).json({ message: "Category not found" });
+      }
+      categoryIds = [category._id];
     }
-
-    const products = await Product.find({
-      category: category._id,
-      isActive: true,
-    })
+    
+    if (categoryIds.length === 0) {
+      return res.status(404).json({ message: "No valid categories found" });
+    }
+    
+    // Build filter
+    let filter = {
+      category: { $in: categoryIds },
+      isActive: true
+    };
+    
+    // Price filter based on finalPrice
+    if (minPrice !== undefined || maxPrice !== undefined) {
+      filter.finalPrice = {};  // 🔥 finalPrice use kar rahe hain
+      if (minPrice) filter.finalPrice.$gte = Number(minPrice);
+      if (maxPrice) filter.finalPrice.$lte = Number(maxPrice);
+    }
+    
+    //SORTING - finalPrice ke hisaab se (discount ke baad wali price)
+    let sortOption = {};
+    if (sort === "price_asc") {
+      sortOption = { finalPrice: 1 };  // Low to High
+    } else if (sort === "price_desc") {
+      sortOption = { finalPrice: -1 }; // High to Low
+    } else if (sort === "newest") {
+      sortOption = { createdAt: -1 };
+    } else if (sort === "oldest") {
+      sortOption = { createdAt: 1 };
+    } else if (sort === "name_asc") {
+      sortOption = { name: 1 };
+    } else if (sort === "name_desc") {
+      sortOption = { name: -1 };
+    }
+    
+    const products = await Product.find(filter)
       .populate("category")
-
+      .sort(sortOption);
+    
+    // Get categories info for response
+    const categories = await Category.find({ _id: { $in: categoryIds } });
+    
     res.json({
-      category: {
-        id: category._id,
-        name: category.name,
-        slug: category.slug,
-      },
+      categories: categories.map(cat => ({
+        id: cat._id,
+        name: cat.name,
+        slug: cat.slug
+      })),
       products,
+      filters: {
+        minPrice: minPrice ? Number(minPrice) : null,
+        maxPrice: maxPrice ? Number(maxPrice) : null,
+        sort
+      }
     });
   } catch (err) {
     console.error("listProductsByCategory error:", err);

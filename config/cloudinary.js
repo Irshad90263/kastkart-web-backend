@@ -33,9 +33,10 @@ const uploadsDir = path.join(__dirname, "../uploads");
 const productsDir = path.join(uploadsDir, "products");
 const slidersDir = path.join(uploadsDir, "sliders");
 const videosDir = path.join(uploadsDir, "videos");
-const categoriesDir = path.join(uploadsDir, "categories");  // 🔥 ADD THIS LINE
+const categoriesDir = path.join(uploadsDir, "categories");
+const vendersDir = path.join(uploadsDir, "venders");
 
-[uploadsDir, productsDir, slidersDir, videosDir, categoriesDir].forEach(dir => {  // 🔥 ADD categoriesDir
+[uploadsDir, productsDir, slidersDir, videosDir, categoriesDir, vendersDir].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -138,6 +139,33 @@ const videoMulter = multer({
 
 const uploadVideo = videoMulter.single("video");
 
+// VENDOR IMAGES - Local Storage
+const vendorStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, vendersDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, "vendor-" + uniqueSuffix + path.extname(file.originalname));
+  },
+});
+
+const vendorMulter = multer({
+  storage: vendorStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    if (allowed.includes(file.mimetype)) return cb(null, true);
+    cb(new Error("Invalid image file type"), false);
+  },
+});
+
+const uploadVendorImages = vendorMulter.fields([
+  { name: "photo", maxCount: 1 },
+  { name: "growerSignature", maxCount: 1 },
+  { name: "orchardImages", maxCount: 10 },
+]);
+
 // Dummy cloudinary object for compatibility
 const cloudinary = {
   uploader: {
@@ -154,5 +182,6 @@ export {
   uploadProductImages,
   uploadSliderImage,
   uploadVideo,
-  uploadCategoryImage,  // 🔥 ADD THIS EXPORT
+  uploadCategoryImage,
+  uploadVendorImages,
 };

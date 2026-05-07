@@ -28,6 +28,7 @@ import shippingRoutes from "./routes/shippingRoute.js";
 import webhookRoutes from "./routes/webhookRoute.js";
 import shiprocketRoutes from "./routes/shiprocketRoutes.js";
 import payMethodRoutes from "./routes/payMethodRoutes.js";
+import venderRoutes from "./routes/venderRoutes.js";
 
 // User routes
 import userRoutes from "./routes/userRoutes.js";
@@ -85,6 +86,7 @@ app.use("/api/shipping", shippingRoutes);
 app.use("/api/webhook", webhookRoutes);
 app.use("/api/shiprocket", shiprocketRoutes);
 app.use("/api/method", payMethodRoutes);
+app.use("/api/venders", venderRoutes);
 
 // User routes
 app.use("/api/users", userRoutes);

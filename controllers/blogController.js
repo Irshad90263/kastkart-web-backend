@@ -1,50 +1,22 @@
 // controllers/blogController.js
 import Blog from "../models/Blog.js";
-import Admin from "../models/Admin.js";
 
 // ADMIN FUNCTIONS
 
 // Create Blog (Admin)
 export const createBlog = async (req, res) => {
   try {
-    const {
-      title,
-      shortDescription,
-      content, // TinyMCE HTML content
-      thumbnailImage,
-      coverImage,
-      category,
-      tags,
-      metaTitle,
-      metaDescription,
-      metaKeywords,
-      isPublished,
-      isFeatured
-    } = req.body;
+    const { title, description, image, relatedBlog } = req.body;
 
-    if (!title || !content) {
-      return res.status(400).json({ message: "Title and content are required" });
+    if (!title || !description || !image) {
+      return res.status(400).json({ message: "Title, description, and image are required" });
     }
-
-    // Get admin info
-    const admin = await Admin.findById(req.user.sub);
-    if (!admin) return res.status(404).json({ message: "Admin not found" });
 
     const blog = await Blog.create({
       title,
-      shortDescription,
-      content,
-      thumbnailImage,
-      coverImage,
-      category,
-      tags: Array.isArray(tags) ? tags : (tags ? tags.split(",").map(t => t.trim()) : []),
-      authorName: admin.name,
-      authorId: admin._id,
-      metaTitle: metaTitle || title,
-      metaDescription,
-      metaKeywords: Array.isArray(metaKeywords) ? metaKeywords : (metaKeywords ? metaKeywords.split(",").map(k => k.trim()) : []),
-      isPublished: !!isPublished,
-      isFeatured: !!isFeatured
+      description,
+      image,
+      relatedBlog: Array.isArray(relatedBlog) ? relatedBlog : [],
     });
 
     res.status(201).json({ message: "Blog created successfully", blog });
@@ -54,23 +26,34 @@ export const createBlog = async (req, res) => {
   }
 };
 
-// Get All Blogs (Admin)
+// Get All Blogs (Admin/Public)
 export const getAllBlogs = async (req, res) => {
   try {
-    const { page = 1, limit = 10, status, category } = req.query;
+    const { page = 1, limit = 10, admin, search, status } = req.query;
     
-    const filter = {};
-    if (status === "published") filter.isPublished = true;
-    if (status === "draft") filter.isPublished = false;
-    if (category) filter.category = category;
+    // Initial query logic
+    let query = admin === "true" ? {} : { isActive: true };
 
-    const blogs = await Blog.find(filter)
-      .populate("authorId", "name adminId")
+    // Server-side Searching
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } }
+      ];
+    }
+
+    // Server-side Filtering by Status
+    if (status && status !== "all") {
+      query.isActive = status === "active";
+    }
+
+    const blogs = await Blog.find(query)
+      .populate("relatedBlog", "title image")
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
 
-    const total = await Blog.countDocuments(filter);
+    const total = await Blog.countDocuments(query);
 
     res.json({
       blogs,
@@ -78,8 +61,8 @@ export const getAllBlogs = async (req, res) => {
         page: parseInt(page),
         limit: parseInt(limit),
         total,
-        pages: Math.ceil(total / limit)
-      }
+        pages: Math.ceil(total / limit),
+      },
     });
   } catch (err) {
     console.error("getAllBlogs error:", err);
@@ -90,25 +73,18 @@ export const getAllBlogs = async (req, res) => {
 // Update Blog (Admin)
 export const updateBlog = async (req, res) => {
   try {
-    const { idOrSlug } = req.params;
+    const { id } = req.params;
     const updates = req.body;
 
-    let blog = await Blog.findOne({
-      $or: [{ _id: idOrSlug }, { slug: idOrSlug }]
-    });
-
+    const blog = await Blog.findById(id);
     if (!blog) return res.status(404).json({ message: "Blog not found" });
 
-    // Handle tags and keywords
-    if (updates.tags && !Array.isArray(updates.tags)) {
-      updates.tags = updates.tags.split(",").map(t => t.trim());
-    }
-    if (updates.metaKeywords && !Array.isArray(updates.metaKeywords)) {
-      updates.metaKeywords = updates.metaKeywords.split(",").map(k => k.trim());
-    }
+    // Apply updates
+    Object.keys(updates).forEach((key) => {
+      blog[key] = updates[key];
+    });
 
-    Object.assign(blog, updates);
-    await blog.save();
+    await blog.save(); // This will trigger the pre-save hook for slug
 
     res.json({ message: "Blog updated successfully", blog });
   } catch (err) {
@@ -120,11 +96,9 @@ export const updateBlog = async (req, res) => {
 // Delete Blog (Admin)
 export const deleteBlog = async (req, res) => {
   try {
-    const { idOrSlug } = req.params;
+    const { id } = req.params;
 
-    const blog = await Blog.findOneAndDelete({
-      $or: [{ _id: idOrSlug }, { slug: idOrSlug }]
-    });
+    const blog = await Blog.findByIdAndDelete(id);
 
     if (!blog) return res.status(404).json({ message: "Blog not found" });
 
@@ -135,138 +109,46 @@ export const deleteBlog = async (req, res) => {
   }
 };
 
-// PUBLIC FUNCTIONS
-
-// Get Published Blogs (Public)
-export const getPublishedBlogs = async (req, res) => {
+// Toggle Blog Status (Admin)
+export const toggleBlogStatus = async (req, res) => {
   try {
-    const { page = 1, limit = 10, category, tag, search } = req.query;
+    const { id } = req.params;
+    const blog = await Blog.findById(id);
     
-    const filter = { isPublished: true };
-    
-    if (category) filter.category = category;
-    if (tag) filter.tags = { $in: [tag] };
-    if (search) {
-      filter.$or = [
-        { title: { $regex: search, $options: "i" } },
-        { shortDescription: { $regex: search, $options: "i" } },
-        { tags: { $in: [new RegExp(search, "i")] } }
-      ];
-    }
+    if (!blog) return res.status(404).json({ message: "Blog not found" });
 
-    const blogs = await Blog.find(filter, {
-      title: 1,
-      slug: 1,
-      shortDescription: 1,
-      thumbnailImage: 1,
-      category: 1,
-      tags: 1,
-      authorName: 1,
-      views: 1,
-      likes: 1,
-      readTime: 1,
-      publishedAt: 1,
-      isFeatured: 1
-    })
-    .sort({ isFeatured: -1, publishedAt: -1 })
-    .limit(limit * 1)
-    .skip((page - 1) * limit);
+    blog.isActive = !blog.isActive;
+    await blog.save();
 
-    const total = await Blog.countDocuments(filter);
-
-    res.json({
-      blogs,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    });
+    res.json({ message: `Blog ${blog.isActive ? 'activated' : 'deactivated'} successfully`, blog });
   } catch (err) {
-    console.error("getPublishedBlogs error:", err);
+    console.error("toggleBlogStatus error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
+
+// PUBLIC FUNCTIONS
 
 // Get Single Blog (Public)
 export const getBlog = async (req, res) => {
   try {
-    const { idOrSlug } = req.params;
-
-    const blog = await Blog.findOne({
-      $or: [{ _id: idOrSlug }, { slug: idOrSlug }],
-      isPublished: true
-    }).populate("authorId", "name");
+    const { id } = req.params; // This can be an ID or a Slug
+    
+    let blog;
+    
+    // Check if the provided param is a valid MongoDB ObjectId
+    if (id.match(/^[0-9a-fA-F]{24}$/)) {
+      blog = await Blog.findById(id).populate("relatedBlog", "title image");
+    } else {
+      // If not an ID, search by slug
+      blog = await Blog.findOne({ slug: id }).populate("relatedBlog", "title image");
+    }
 
     if (!blog) return res.status(404).json({ message: "Blog not found" });
-
-    // Increment views
-    blog.views += 1;
-    await blog.save();
 
     res.json({ blog });
   } catch (err) {
     console.error("getBlog error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-};
-
-// Get Featured Blogs (Public)
-export const getFeaturedBlogs = async (req, res) => {
-  try {
-    const blogs = await Blog.find(
-      { isPublished: true, isFeatured: true },
-      {
-        title: 1,
-        slug: 1,
-        shortDescription: 1,
-        thumbnailImage: 1,
-        category: 1,
-        authorName: 1,
-        readTime: 1,
-        publishedAt: 1
-      }
-    )
-    .sort({ publishedAt: -1 })
-    .limit(5);
-
-    res.json({ blogs });
-  } catch (err) {
-    console.error("getFeaturedBlogs error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-};
-
-// Get Blog Categories (Public)
-export const getBlogCategories = async (req, res) => {
-  try {
-    const categories = await Blog.distinct("category", { isPublished: true });
-    res.json({ categories: categories.filter(Boolean) });
-  } catch (err) {
-    console.error("getBlogCategories error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-};
-
-// Like Blog (Public)
-export const likeBlog = async (req, res) => {
-  try {
-    const { idOrSlug } = req.params;
-
-    const blog = await Blog.findOne({
-      $or: [{ _id: idOrSlug }, { slug: idOrSlug }],
-      isPublished: true
-    });
-
-    if (!blog) return res.status(404).json({ message: "Blog not found" });
-
-    blog.likes += 1;
-    await blog.save();
-
-    res.json({ message: "Blog liked", likes: blog.likes });
-  } catch (err) {
-    console.error("likeBlog error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };

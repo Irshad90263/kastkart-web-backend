@@ -35,6 +35,7 @@ export const createProduct = async (req, res) => {
       description,
       about,
       categoryId,
+      vendor_id,
     } = req.body;
 
     if (!name || !price || !categoryId) {
@@ -74,6 +75,7 @@ export const createProduct = async (req, res) => {
         url: mainImageUrl,
         publicId: mainImageFile.filename,
       },
+      vendor_id,
       galleryImages,
       description,
       about: {
@@ -274,6 +276,7 @@ export const updateProduct = async (req, res) => {
       about,
       categoryId,
       isActive,
+      vendor_id,
     } = req.body;
 
     // name + slug
@@ -300,6 +303,11 @@ export const updateProduct = async (req, res) => {
         return res.status(400).json({ message: "Invalid categoryId" });
       }
       product.category = category._id;
+    }
+
+    // vendor update
+    if (vendor_id !== undefined) {
+      product.vendor_id = vendor_id || null;
     }
 
     // description

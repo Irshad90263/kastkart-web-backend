@@ -20,6 +20,29 @@ const deleteFile = (filename) => {
 // @access  Private (Admin)
 export const createVendor = async (req, res) => {
   try {
+    const data = { ...req.body };
+
+    // 1. Parse JSON fields (important for multipart/form-data)
+    const jsonFields = [
+      "residentialAddress",
+      "orchardAddress",
+      "farmingExperience",
+      "mangoVarietiesGrown",
+      "farmingPractices",
+      "socialMedia",
+      "contactDetails",
+    ];
+
+    jsonFields.forEach((field) => {
+      if (typeof data[field] === "string") {
+        try {
+          data[field] = JSON.parse(data[field]);
+        } catch (e) {
+          console.error(`Error parsing ${field}:`, e);
+        }
+      }
+    });
+
     const {
       name,
       residentialAddress,
@@ -34,9 +57,9 @@ export const createVendor = async (req, res) => {
       contactDetails,
       vendorDesignation,
       signedDate,
-    } = req.body;
+    } = data;
 
-    // Basic Validation
+    // 2. Basic Validation (Now it will work correctly on parsed objects)
     if (!name) return res.status(400).json({ success: false, message: "Vendor name is required" });
     if (!contactDetails || !contactDetails.phoneNumber) {
       return res.status(400).json({ success: false, message: "Contact phone number is required" });
@@ -44,7 +67,7 @@ export const createVendor = async (req, res) => {
 
     const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
 
-    // 📸 Handle Images
+    // 3. Handle Images
     let photo = undefined;
     if (req.files && req.files.photo) {
       const file = req.files.photo[0];
@@ -52,6 +75,9 @@ export const createVendor = async (req, res) => {
         url: `${baseUrl}/uploads/venders/${file.filename}`,
         publicId: file.filename
       };
+    } else {
+      // Schema marks photo.publicId as required, so we should check here
+      return res.status(400).json({ success: false, message: "Grower photo is required" });
     }
 
     let growerSignature = undefined;
@@ -61,6 +87,9 @@ export const createVendor = async (req, res) => {
         url: `${baseUrl}/uploads/venders/${file.filename}`,
         publicId: file.filename
       };
+    } else {
+      // Schema marks growerSignature.publicId as required
+      return res.status(400).json({ success: false, message: "Grower signature is required" });
     }
 
     let orchardImages = [];
@@ -75,16 +104,16 @@ export const createVendor = async (req, res) => {
     const vendor = new Vendor({
       name,
       photo,
-      residentialAddress: typeof residentialAddress === 'string' ? JSON.parse(residentialAddress) : residentialAddress,
-      orchardAddress: typeof orchardAddress === 'string' ? JSON.parse(orchardAddress) : orchardAddress,
-      farmingExperience: typeof farmingExperience === 'string' ? JSON.parse(farmingExperience) : farmingExperience,
+      residentialAddress,
+      orchardAddress,
+      farmingExperience,
       totalAreaOfCultivation,
       expectedQuantity,
-      mangoVarietiesGrown: typeof mangoVarietiesGrown === 'string' ? JSON.parse(mangoVarietiesGrown) : mangoVarietiesGrown,
-      farmingPractices: typeof farmingPractices === 'string' ? JSON.parse(farmingPractices) : farmingPractices,
+      mangoVarietiesGrown,
+      farmingPractices,
       harvestingPractices,
-      socialMedia: typeof socialMedia === 'string' ? JSON.parse(socialMedia) : socialMedia,
-      contactDetails: typeof contactDetails === 'string' ? JSON.parse(contactDetails) : contactDetails,
+      socialMedia,
+      contactDetails,
       vendorDesignation,
       orchardImages,
       growerSignature,
@@ -120,6 +149,20 @@ export const getAllVendors = async (req, res) => {
   }
 };
 
+// @desc    Get vendor list (minimal data for dropdowns)
+// @route   GET /api/venders/vendorlist
+// @access  Private (Admin)
+export const getVendorList = async (req, res) => {
+  try {
+    const vendors = await Vendor.find({ isActive: true })
+      .select("name contactDetails.phoneNumber")
+      .sort({ name: 1 });
+    res.status(200).json({ success: true, vendors });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Server Error" });
+  }
+};
+
 // @desc    Get single vendor by ID
 // @route   GET /api/venders/:id
 // @access  Private (Admin)
@@ -145,12 +188,17 @@ export const updateVendor = async (req, res) => {
 
     // Update simple fields
     const updateData = { ...req.body };
-    
+
     // Parse JSON strings if sent as multipart/form-data
-    const jsonFields = ['residentialAddress', 'orchardAddress', 'farmingExperience', 'mangoVarietiesGrown', 'farmingPractices', 'socialMedia', 'contactDetails'];
+    const jsonFields = ['residentialAddress', 'orchardAddress', 'farmingExperience', 'mangoVarietiesGrown', 'farmingPractices', 'socialMedia', 'contactDetails', 'orchardImages'];
     jsonFields.forEach(field => {
       if (typeof updateData[field] === 'string') {
-        updateData[field] = JSON.parse(updateData[field]);
+        try {
+          updateData[field] = JSON.parse(updateData[field]);
+        } catch (e) {
+          // If orchardImages is not a valid JSON (e.g. not provided), just ignore it
+          if (field !== 'orchardImages') console.error(`Error parsing ${field}:`, e);
+        }
       }
     });
 
@@ -173,24 +221,32 @@ export const updateVendor = async (req, res) => {
           publicId: file.filename
         };
       }
-
-      if (req.files.orchardImages) {
-        // Option: Append to existing or replace? Let's replace for simplicity or handle as needed.
-        // Usually, for updates, you might want to manage individual deletions, but here we'll replace or append.
-        const newImages = req.files.orchardImages.map(file => ({
-          url: `${baseUrl}/uploads/venders/${file.filename}`,
-          publicId: file.filename
-        }));
-        
-        // If the user sends a flag to replace, we delete old ones.
-        if (req.body.replaceOrchardImages === 'true') {
-          vendor.orchardImages.forEach(img => deleteFile(img.publicId));
-          updateData.orchardImages = newImages;
-        } else {
-          updateData.orchardImages = [...vendor.orchardImages, ...newImages];
-        }
-      }
     }
+
+    // Handle Orchard Images separately to allow deletion and appending
+    let currentOrchardImages = updateData.orchardImages || vendor.orchardImages || [];
+
+    // If updateData.orchardImages was provided, it means the user might have deleted some.
+    // We should delete the files that are no longer in the list.
+    if (updateData.orchardImages) {
+      const remainingPublicIds = updateData.orchardImages.map(img => img.publicId);
+      vendor.orchardImages.forEach(img => {
+        if (!remainingPublicIds.includes(img.publicId)) {
+          deleteFile(img.publicId);
+        }
+      });
+    }
+
+    // Append new images if any
+    if (req.files && req.files.orchardImages) {
+      const newImages = req.files.orchardImages.map(file => ({
+        url: `${baseUrl}/uploads/venders/${file.filename}`,
+        publicId: file.filename
+      }));
+      currentOrchardImages = [...currentOrchardImages, ...newImages];
+    }
+
+    updateData.orchardImages = currentOrchardImages;
 
     const updatedVendor = await Vendor.findByIdAndUpdate(req.params.id, updateData, {
       new: true,

@@ -28,6 +28,10 @@ const productSchema = new mongoose.Schema(
       ref: "Category",
       required: true,
     },
+    vendor_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Vendor",
+    },
 
     price: { type: Number, required: true, min: 0 },
     discountPercent: { type: Number, default: 0, min: 0, max: 100 },

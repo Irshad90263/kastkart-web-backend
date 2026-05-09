@@ -138,10 +138,14 @@ export const getBlog = async (req, res) => {
     
     // Check if the provided param is a valid MongoDB ObjectId
     if (id.match(/^[0-9a-fA-F]{24}$/)) {
-      blog = await Blog.findById(id).populate("relatedBlog", "title image");
+      blog = await Blog.findById(id)
+        .populate("relatedBlog", "title image slug description createdAt")
+        .select("-comments"); // Hide comments from public view
     } else {
       // If not an ID, search by slug
-      blog = await Blog.findOne({ slug: id }).populate("relatedBlog", "title image");
+      blog = await Blog.findOne({ slug: id })
+        .populate("relatedBlog", "title image slug description createdAt")
+        .select("-comments"); // Hide comments from public view
     }
 
     if (!blog) return res.status(404).json({ message: "Blog not found" });
@@ -149,6 +153,47 @@ export const getBlog = async (req, res) => {
     res.json({ blog });
   } catch (err) {
     console.error("getBlog error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// Add Comment to Blog (Public)
+export const addComment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { user, comment } = req.body;
+
+    if (!user || !comment) {
+      return res.status(400).json({ message: "User ID and comment are required" });
+    }
+
+    const blog = await Blog.findById(id);
+    if (!blog) return res.status(404).json({ message: "Blog not found" });
+
+    blog.comments.push({ user, comment });
+    await blog.save();
+
+    res.status(201).json({ message: "Comment added successfully" });
+  } catch (err) {
+    console.error("addComment error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// Get Single Blog (Admin) - Detailed with comments
+export const getBlogByIdAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const blog = await Blog.findById(id)
+      .populate("relatedBlog", "title image slug description createdAt")
+      .populate("comments.user", "firstName lastName phone profilePicture");
+
+    if (!blog) return res.status(404).json({ message: "Blog not found" });
+
+    res.json({ blog });
+  } catch (err) {
+    console.error("getBlogByIdAdmin error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };

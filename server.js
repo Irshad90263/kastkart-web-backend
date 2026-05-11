@@ -30,12 +30,15 @@ import shiprocketRoutes from "./routes/shiprocketRoutes.js";
 import payMethodRoutes from "./routes/payMethodRoutes.js";
 import venderRoutes from "./routes/venderRoutes.js";
 import corporateInquiryRoutes from "./routes/corporateInquiryRoutes.js";
+import orchardRoutes from "./routes/orchardRoutes.js";
+
 
 // User routes
 import userRoutes from "./routes/userRoutes.js";
 import cartRoutes from "./routes/cartRoutes.js";
 import wishlistRoutes from "./routes/wishlistRoutes.js";
 import userOrderRoutes from "./routes/userOrderRoutes.js";
+import deliveyRoutes from "./routes/delivery.routes.js";
 
 const app = express();
 
@@ -89,6 +92,9 @@ app.use("/api/shiprocket", shiprocketRoutes);
 app.use("/api/method", payMethodRoutes);
 app.use("/api/venders", venderRoutes);
 app.use("/api/corporate-inquiry", corporateInquiryRoutes);
+app.use("/api/delivery", deliveyRoutes);
+app.use("/api/orchards", orchardRoutes);
+
 
 // User routes
 app.use("/api/users", userRoutes);

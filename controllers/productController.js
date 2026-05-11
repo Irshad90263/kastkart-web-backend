@@ -97,24 +97,24 @@ export const createProduct = async (req, res) => {
 export const listProducts = async (req, res) => {
   try {
     const { status, sort = "", minPrice, maxPrice } = req.query;
-    
+
     let filter = {};
-    
+
     // Status filter
     if (status === 'active') filter = { isActive: true };
     if (status === 'inactive') filter = { isActive: false };
     if (!status) filter = { isActive: true }; // Default: only active products
-    
+
     //  Price filter based on finalPrice
     if (minPrice !== undefined || maxPrice !== undefined) {
       filter.finalPrice = {};
       if (minPrice) filter.finalPrice.$gte = Number(minPrice);
       if (maxPrice) filter.finalPrice.$lte = Number(maxPrice);
     }
-    
+
     //  Sorting
     let sortOption = { createdAt: -1 }; // Default: newest first
-    
+
     if (sort === "price_asc") {
       sortOption = { finalPrice: 1 };  // Low to High
     } else if (sort === "price_desc") {
@@ -128,11 +128,11 @@ export const listProducts = async (req, res) => {
     } else if (sort === "name_desc") {
       sortOption = { name: -1 };
     }
-    
+
     const products = await Product.find(filter)
       .populate("category", "name slug")
       .sort(sortOption);
-      
+
     res.json({
       products,
       filters: {
@@ -170,13 +170,13 @@ export const listProductsByCategory = async (req, res) => {
   try {
     let { idOrSlug } = req.params;
     const { sort = "", minPrice, maxPrice } = req.query;
-    
+
     // 🔥 Multiple categories handle
     let categoryIds = [];
-    
+
     if (idOrSlug.includes(',')) {
       const slugsOrIds = idOrSlug.split(',');
-      
+
       for (const item of slugsOrIds) {
         let cat = await Category.findOne({ slug: item });
         if (!cat && item.match(/^[0-9a-fA-F]{24}$/)) {
@@ -194,24 +194,24 @@ export const listProductsByCategory = async (req, res) => {
       }
       categoryIds = [category._id];
     }
-    
+
     if (categoryIds.length === 0) {
       return res.status(404).json({ message: "No valid categories found" });
     }
-    
+
     // Build filter
     let filter = {
       category: { $in: categoryIds },
       isActive: true
     };
-    
+
     // Price filter based on finalPrice
     if (minPrice !== undefined || maxPrice !== undefined) {
       filter.finalPrice = {};  // 🔥 finalPrice use kar rahe hain
       if (minPrice) filter.finalPrice.$gte = Number(minPrice);
       if (maxPrice) filter.finalPrice.$lte = Number(maxPrice);
     }
-    
+
     //SORTING - finalPrice ke hisaab se (discount ke baad wali price)
     let sortOption = {};
     if (sort === "price_asc") {
@@ -227,14 +227,14 @@ export const listProductsByCategory = async (req, res) => {
     } else if (sort === "name_desc") {
       sortOption = { name: -1 };
     }
-    
+
     const products = await Product.find(filter)
       .populate("category")
       .sort(sortOption);
-    
+
     // Get categories info for response
     const categories = await Category.find({ _id: { $in: categoryIds } });
-    
+
     res.json({
       categories: categories.map(cat => ({
         id: cat._id,
@@ -341,7 +341,7 @@ export const updateProduct = async (req, res) => {
         fs.unlinkSync(oldFilePath);
       }
       // await cloudinary.uploader.destroy(product.mainImage.publicId);
-      
+
       const file = req.files.mainImage[0];
       const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
       product.mainImage = {
@@ -382,7 +382,7 @@ export const updateProduct = async (req, res) => {
 export const toggleProductStatus = async (req, res) => {
   try {
     const { idOrSlug } = req.params;
-    
+
     let product =
       (await Product.findOne({ slug: idOrSlug })) ||
       (await Product.findById(idOrSlug));
@@ -394,9 +394,9 @@ export const toggleProductStatus = async (req, res) => {
     product.isActive = !product.isActive;
     await product.save();
 
-    res.json({ 
+    res.json({
       message: `Product ${product.isActive ? "activated" : "deactivated"} successfully`,
-      product 
+      product
     });
   } catch (err) {
     console.error("toggleProductStatus error:", err);
@@ -419,7 +419,7 @@ export const deleteProduct = async (req, res) => {
       fs.unlinkSync(mainImagePath);
     }
     // await cloudinary.uploader.destroy(product.mainImage.publicId);
-    
+
     for (let img of product.galleryImages) {
       const imgPath = path.join(__dirname, "../", img.url.replace(process.env.BASE_URL || 'http://localhost:5000', ''));
       if (fs.existsSync(imgPath)) {

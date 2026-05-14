@@ -1,10 +1,11 @@
-// controllers/userOrderController.js
+import mongoose from "mongoose";
 import Order from "../models/Order.js";
 import Cart from "../models/Cart.js";
 import Product from "../models/Product.js";
 import Offer from "../models/Offer.js";
 import User from "../models/User.js";
 import { createShiprocketOrder } from "./shiprocketOrder.controller.js";
+import { cancelShippingOrder } from "../utils/shippingProviderSelector.js";
 
 // Place Order
 export const placeOrder = async (req, res) => {
@@ -55,8 +56,8 @@ export const placeOrder = async (req, res) => {
     // Apply offer if provided
     let discount = 0;
     if (offerCode) {
-      const offer = await Offer.findOne({ 
-        code: offerCode, 
+      const offer = await Offer.findOne({
+        code: offerCode,
         isActive: true,
         $or: [
           { startDate: { $exists: false } },
@@ -73,8 +74,8 @@ export const placeOrder = async (req, res) => {
       }
 
       if (subtotal < offer.minOrderAmount) {
-        return res.status(400).json({ 
-          message: `Minimum order amount ₹${offer.minOrderAmount} required for this offer` 
+        return res.status(400).json({
+          message: `Minimum order amount ₹${offer.minOrderAmount} required for this offer`
         });
       }
 
@@ -106,7 +107,7 @@ export const placeOrder = async (req, res) => {
     // Auto-create Shiprocket order and confirm for all orders
     try {
       const shiprocketResponse = await createShiprocketOrder(order);
-      
+
       // Update order with Shiprocket data and confirm
       order.shiprocketCreated = true;
       order.shiprocketOrderId = shiprocketResponse.order_id;
@@ -114,9 +115,9 @@ export const placeOrder = async (req, res) => {
       order.awbCode = shiprocketResponse.awb_code;
       order.courierName = shiprocketResponse.courier_name;
       order.status = "confirmed"; // Only confirm if Shiprocket succeeds
-      
+
       await order.save();
-      
+
       console.log("✅ Order auto-confirmed with Shiprocket:", order._id);
     } catch (shiprocketError) {
       console.error("❌ Auto Shiprocket creation failed, order remains pending:", shiprocketError.message);
@@ -131,10 +132,10 @@ export const placeOrder = async (req, res) => {
     cart.totalAmount = 0;
     await cart.save();
 
-    res.status(201).json({ 
-      message: "Order placed successfully", 
+    res.status(201).json({
+      message: "Order placed successfully",
       order,
-      orderId: order._id 
+      orderId: order._id
     });
   } catch (err) {
     console.error("placeOrder error:", err);
@@ -146,7 +147,7 @@ export const placeOrder = async (req, res) => {
 export const getUserOrders = async (req, res) => {
   try {
     const { page = 1, limit = 10, status } = req.query;
-    
+
     const filter = { userId: req.user.sub };
     if (status) filter.status = status;
 
@@ -158,8 +159,8 @@ export const getUserOrders = async (req, res) => {
 
     const total = await Order.countDocuments(filter);
 
-    res.json({ 
-      orders, 
+    res.json({
+      orders,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -178,9 +179,9 @@ export const getOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
 
-    const order = await Order.findOne({ 
-      _id: orderId, 
-      userId: req.user.sub 
+    const order = await Order.findOne({
+      _id: orderId,
+      userId: req.user.sub
     }).populate("items.product", "name slug mainImage");
 
     if (!order) return res.status(404).json({ message: "Order not found" });
@@ -197,18 +198,38 @@ export const cancelOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
 
-    const order = await Order.findOne({ 
-      _id: orderId, 
-      userId: req.user.sub 
+    const order = await Order.findOne({
+      _id: orderId,
+      userId: req.user.sub
     });
 
     if (!order) return res.status(404).json({ message: "Order not found" });
 
-    if (order.status !== "pending") {
-      return res.status(400).json({ message: "Order cannot be cancelled" });
+    // Allow cancellation if not yet shipped or delivered
+    if (["shipped", "delivered", "cancelled"].includes(order.status)) {
+      return res.status(400).json({ message: `Order cannot be cancelled because it is already ${order.status}` });
+    }
+
+    // 🛑 Provider Side Cancellation logic (if shipping created)
+    const provider = order.shippingDetails?.provider || order.selectedCourier;
+    const providerOrderId = order.shippingDetails?.providerOrderId || order.shiprocketOrderId;
+    const awb = order.shippingDetails?.awbCode || order.awbCode;
+
+    if (provider && (providerOrderId || awb)) {
+      try {
+        console.log(`🛑 User cancelling ${provider} shipment for order:`, orderId);
+        await cancelShippingOrder(provider, providerOrderId, awb);
+      } catch (cancelError) {
+        console.warn("⚠️ Provider cancellation failed during user cancel:", cancelError.message);
+      }
     }
 
     order.status = "cancelled";
+    if (req.user?.sub && mongoose.Types.ObjectId.isValid(req.user.sub)) {
+      order.cancelledBy = new mongoose.Types.ObjectId(req.user.sub);
+    }
+    order.cancelledAt = new Date();
+
     await order.save();
 
     res.json({ message: "Order cancelled successfully", order });
@@ -223,9 +244,9 @@ export const trackOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
 
-    const order = await Order.findOne({ 
-      _id: orderId, 
-      userId: req.user.sub 
+    const order = await Order.findOne({
+      _id: orderId,
+      userId: req.user.sub
     }, "status paymentStatus createdAt updatedAt");
 
     if (!order) return res.status(404).json({ message: "Order not found" });
@@ -238,7 +259,7 @@ export const trackOrder = async (req, res) => {
       cancelled: { step: 0, message: "Order cancelled" }
     };
 
-    res.json({ 
+    res.json({
       orderId: order._id,
       currentStatus: order.status,
       paymentStatus: order.paymentStatus,

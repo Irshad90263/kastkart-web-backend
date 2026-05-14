@@ -1,8 +1,8 @@
-// controllers/orderController.js
+import mongoose from "mongoose";
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import Offer from "../models/Offer.js";
-import { createShiprocketOrder } from "./shiprocketOrder.controller.js";
+import { createShippingOrder, getTrackingDetails, cancelShippingOrder } from "../utils/shippingProviderSelector.js";
 
 const applyOffer = (offer, subtotal) => {
   if (!offer) return { discount: 0, total: subtotal };
@@ -22,7 +22,7 @@ const applyOffer = (offer, subtotal) => {
   return { discount: Math.round(discount), total: Math.round(total) };
 };
 
-// PLACE ORDER (public) - Auto Shiprocket Integration
+// PLACE ORDER (public) - Dynamic Multi-Courier Integration
 export const placeOrder = async (req, res) => {
   try {
     const {
@@ -33,14 +33,17 @@ export const placeOrder = async (req, res) => {
       paymentMethod,
       notes,
       shippingCharges = 0,
-      handlingFee = 0
+      handlingFee = 0,
+      selectedCourier, // "shiprocket" or "delhivery"
+      weight            // Total package weight from frontend (kg)
     } = req.body;
 
-
     if (!userId || !items || !Array.isArray(items) || items.length === 0) {
-      return res
-        .status(400)
-        .json({ message: "userId and items are required" });
+      return res.status(400).json({ message: "userId and items are required" });
+    }
+
+    if (!selectedCourier) {
+      return res.status(400).json({ message: "Please select a shipping courier" });
     }
 
     if (!shippingAddress || !shippingAddress.name || !shippingAddress.phone) {
@@ -59,9 +62,7 @@ export const placeOrder = async (req, res) => {
       );
 
       if (!product) {
-        return res
-          .status(400)
-          .json({ message: `Invalid productId: ${item.productId}` });
+        return res.status(400).json({ message: `Invalid productId: ${item.productId}` });
       }
 
       const qty = Number(item.quantity || 1);
@@ -103,7 +104,7 @@ export const placeOrder = async (req, res) => {
       Number(shippingCharges) +
       Number(handlingFee);
 
-    // 📦 CREATE ORDER
+    // 📦 CREATE ORDER IN DB
     const order = await Order.create({
       userId,
       items: itemsForOrder,
@@ -115,45 +116,59 @@ export const placeOrder = async (req, res) => {
       offerCode: offer ? offer.code : undefined,
       paymentMethod: paymentMethod || "COD",
       shippingAddress,
-      notes
+      notes,
+      selectedCourier: selectedCourier.toLowerCase(),
+      weight: Number(weight) || 0.5  // Save weight — used by Shiprocket/Delhivery for AWB
     });
 
-    // 🚀 AUTO CREATE SHIPROCKET ORDER (ALL ORDERS)
+    // 🚀 DYNAMIC COURIER ORDER CREATION
     try {
-      console.log("🚀 Auto-creating Shiprocket order for:", order._id);
+      console.log(`🚀 Creating ${selectedCourier} order for:`, order._id);
 
-      const shiprocketRes = await createShiprocketOrder(order);
+      const shippingResponse = await createShippingOrder(selectedCourier, order);
+      console.log(shippingResponse)
 
-      order.shiprocketOrderId = shiprocketRes.order_id;
-      order.awbCode = shiprocketRes.awb_code;
-      order.courierName = shiprocketRes.courier_name;
-      order.shipmentId = shiprocketRes.shipment_id;
-      order.shiprocketCreated = true;
-      order.status = "confirmed"; // Only confirm if Shiprocket creation succeeds
+      // Save shipping details in generic object
+      order.shippingDetails = shippingResponse;
+      order.shippingProvider = shippingResponse.provider;
+      order.shippingCreated = true;
+      order.status = "confirmed"; // Auto confirm if shipping succeeds
+
+      // Maintain legacy fields for compatibility
+      order.shiprocketOrderId = shippingResponse.providerOrderId;
+      order.awbCode = shippingResponse.awbCode;
+      order.courierName = shippingResponse.courierName;
+      order.shipmentId = shippingResponse.shipmentId;
+      order.shiprocketCreated = shippingResponse.provider === "shiprocket";
 
       await order.save();
-      console.log("✅ Shiprocket order auto-created and order confirmed:", shiprocketRes.order_id);
-    } catch (shiprocketError) {
-      console.error(
-        "❌ Auto Shiprocket creation failed, order remains pending:",
-        shiprocketError.message
-      );
-      order.shiprocketError = shiprocketError.message;
-      // Order status remains "pending" (default)
+      console.log(`✅ ${selectedCourier} order created and confirmed:`, shippingResponse.awbCode);
+    } catch (shippingError) {
+      console.error(`❌ ${selectedCourier} creation failed:`, shippingError.message);
+      
+      // Save error in both new and legacy fields
+      if (order.shippingDetails) {
+        order.shippingDetails.error = shippingError.message;
+      } else {
+        order.shippingDetails = { provider: selectedCourier, error: shippingError.message };
+      }
+      
+      order.shippingError = shippingError.message;
+      order.shiprocketError = shippingError.message; // Legacy
       await order.save();
     }
 
     return res.status(201).json({
+      success: true,
       message: "Order placed successfully",
       order,
-      shiprocketStatus: order.shiprocketCreated ? "Created" : "Pending"
+      shipping: order.shippingDetails
     });
   } catch (err) {
     console.error("placeOrder error:", err);
     return res.status(500).json({ message: "Server error" });
   }
 };
-
 
 // ADMIN list
 export const listOrders = async (req, res) => {
@@ -200,7 +215,7 @@ export const getOrder = async (req, res) => {
   }
 };
 
-// ADMIN update status with Enhanced Shiprocket integration
+// ADMIN update status with Dynamic Shipping integration
 export const updateOrderStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -209,35 +224,66 @@ export const updateOrderStatus = async (req, res) => {
     const order = await Order.findById(orderId);
     if (!order) return res.status(404).json({ message: "Order not found" });
 
-    // If status is being changed to "confirmed", create Shiprocket order if not already created
-    if (status === "confirmed" && order.status !== "confirmed" && !order.shiprocketCreated) {
+    // If status confirmed and shipping not created yet
+    if (status === "confirmed" && order.status !== "confirmed" && !order.shippingCreated && !order.shiprocketCreated) {
       try {
-        console.log("🚀 Creating Shiprocket order for:", orderId);
+        const provider = order.selectedCourier || "shiprocket"; // Default to shiprocket if not selected
+        console.log(`🚀 Creating ${provider} order via Admin for:`, orderId);
 
-        const shiprocketRes = await createShiprocketOrder(order);
+        const shippingResponse = await createShippingOrder(provider, order);
 
-        // Update order with Shiprocket details
-        order.shiprocketOrderId = shiprocketRes.order_id;
-        order.awbCode = shiprocketRes.awb_code;
-        order.courierName = shiprocketRes.courier_name;
-        order.shipmentId = shiprocketRes.shipment_id;
-        order.shiprocketCreated = true;
-        order.shiprocketError = null; // Clear any previous errors
+        // Update with shipping details
+        order.shippingDetails = shippingResponse;
+        order.shippingCreated = true;
+        order.shippingError = null;
 
-        console.log("✅ Shiprocket order created:", {
-          orderId: shiprocketRes.order_id,
-          awb: shiprocketRes.awb_code,
-          courier: shiprocketRes.courier_name
-        });
-      } catch (shiprocketError) {
-        console.error("❌ Shiprocket error:", shiprocketError.message);
-        order.shiprocketError = shiprocketError.message;
-        // Revert status back to pending if Shiprocket creation fails
+        // Legacy fields
+        order.shiprocketOrderId = shippingResponse.providerOrderId;
+        order.awbCode = shippingResponse.awbCode;
+        order.courierName = shippingResponse.courierName;
+        order.shipmentId = shippingResponse.shipmentId;
+        order.shiprocketCreated = shippingResponse.provider === "shiprocket";
+
+        console.log(`✅ ${provider} order created:`, shippingResponse.awbCode);
+      } catch (shippingError) {
+        const actualError =
+          shippingError?.response?.data?.message ||
+          shippingError?.message ||
+          "Shipping creation failed";
+        console.error("❌ Shipping error:", actualError);
+        order.shippingError = actualError;
+        await order.save(); // Save error to DB for reference
         return res.status(400).json({
-          message: "Order confirmation failed: Shiprocket order creation failed",
-          error: shiprocketError.message
+          message: "Order confirmation failed",
+          error: actualError, // Actual Shiprocket error (e.g. "Wrong Pickup location entered...")
         });
       }
+    }
+    
+    // 🛑 If status set to CANCELLED and shipping exists, cancel it on provider side too
+    if (status === "cancelled" && order.status !== "cancelled") {
+      const provider = order.shippingDetails?.provider || order.selectedCourier;
+      const providerOrderId = order.shippingDetails?.providerOrderId || order.shiprocketOrderId;
+      const awb = order.shippingDetails?.awbCode || order.awbCode;
+      
+      if (provider && (providerOrderId || awb)) {
+        try {
+          console.log(`🛑 Cancelling ${provider} shipment for order:`, orderId);
+          await cancelShippingOrder(provider, providerOrderId, awb);
+          console.log(`✅ ${provider} shipment cancelled successfully`);
+        } catch (cancelError) {
+          console.warn("⚠️ Provider cancellation failed (non-critical):", cancelError.message);
+          // Cancellation on provider might fail if already shipped/cancelled, 
+          // we still allow DB update to keep system moving.
+        }
+      }
+      
+      // Track who cancelled (Admin)
+      const adminId = req.user?.adminId || req.user?.sub;
+      if (adminId && mongoose.Types.ObjectId.isValid(adminId)) {
+        order.cancelledBy = new mongoose.Types.ObjectId(adminId);
+      }
+      order.cancelledAt = new Date();
     }
 
     if (status) order.status = status;
@@ -247,8 +293,7 @@ export const updateOrderStatus = async (req, res) => {
     res.json({
       message: "Order updated successfully",
       order,
-      shiprocketStatus: order.shiprocketCreated ? "Active" : "Not created",
-      shiprocketError: order.shiprocketError || null
+      shippingStatus: order.shippingCreated ? "Active" : "Not created"
     });
   } catch (err) {
     console.error("updateOrderStatus error:", err);
@@ -264,19 +309,25 @@ export const getOrderTracking = async (req, res) => {
 
     if (!order) return res.status(404).json({ message: "Order not found" });
 
-    const trackingInfo = {
+    const provider = order.shippingDetails?.provider || order.selectedCourier || (order.shiprocketOrderId ? "shiprocket" : null);
+    const awb = order.shippingDetails?.awbCode || order.awbCode;
+
+    let trackingData = null;
+    if (provider && awb) {
+      try {
+        trackingData = await getTrackingDetails(provider, awb);
+      } catch (e) {
+        console.error("Tracking fetch failed:", e.message);
+      }
+    }
+
+    res.json({
       orderId: order._id,
       status: order.status,
-      shippingStatus: order.shippingStatus,
-      awbCode: order.awbCode,
-      courierName: order.courierName,
-      trackingUrl: order.trackingUrl,
-      shiprocketOrderId: order.shiprocketOrderId,
-      shiprocketCreated: order.shiprocketCreated,
-      shiprocketError: order.shiprocketError
-    };
-
-    res.json({ trackingInfo });
+      shippingProvider: provider,
+      awbCode: awb,
+      trackingData
+    });
   } catch (err) {
     console.error("getOrderTracking error:", err);
     res.status(500).json({ message: "Server error" });

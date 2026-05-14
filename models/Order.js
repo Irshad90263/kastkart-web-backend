@@ -58,7 +58,30 @@ const orderSchema = new mongoose.Schema(
     razorpayOrderId: { type: String },
     razorpayPaymentId: { type: String },
 
-    // Shiprocket fields
+    // Multi-Courier Shipping Fields
+    shippingDetails: {
+      provider: {
+        type: String,
+        enum: ["shiprocket", "delhivery"],
+      },
+      providerOrderId: String,
+      awbCode: String,
+      courierName: String,
+      trackingUrl: String,
+      shipmentId: String,
+      shippingStatus: String,
+      created: {
+        type: Boolean,
+        default: false,
+      },
+      error: String,
+    },
+    selectedCourier: {
+      type: String,
+      enum: ["shiprocket", "delhivery"],
+    },
+
+    // Legacy Shiprocket fields
     shiprocketOrderId: { type: String },
     awbCode: { type: String },
     courierName: { type: String },
@@ -71,6 +94,10 @@ const orderSchema = new mongoose.Schema(
 
     shippingAddress: { type: addressSchema, required: true },
     notes: { type: String, default: "" },
+
+    // Cancellation Tracking
+    cancelledBy: { type: mongoose.Schema.Types.ObjectId }, // User ID or Admin ID
+    cancelledAt: { type: Date },
   },
   { timestamps: true }
 );

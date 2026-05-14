@@ -11,12 +11,16 @@ export const shiprocketWebhook = async (req, res) => {
       return res.status(400).json({ message: "AWB or order_id required" });
     }
     
-    // Find order by AWB or Shiprocket order ID
-    let order;
-    if (awb) {
+    // Find order by AWB (Check generic first, then legacy)
+    let order = await Order.findOne({ "shippingDetails.awbCode": awb });
+    
+    if (!order && awb) {
       order = await Order.findOne({ awbCode: awb });
-    } else if (order_id) {
-      order = await Order.findOne({ shiprocketOrderId: order_id });
+    }
+    
+    if (!order && order_id) {
+      order = await Order.findOne({ "shippingDetails.providerOrderId": order_id.toString() }) || 
+              await Order.findOne({ shiprocketOrderId: order_id.toString() });
     }
     
     if (!order) {
@@ -24,7 +28,10 @@ export const shiprocketWebhook = async (req, res) => {
       return res.status(404).json({ message: "Order not found" });
     }
     
-    // Update shipping status
+    // Update shipping status (Generic + Legacy)
+    if (order.shippingDetails) {
+      order.shippingDetails.shippingStatus = current_status;
+    }
     order.shippingStatus = current_status;
     
     // Map Shiprocket status to our order status

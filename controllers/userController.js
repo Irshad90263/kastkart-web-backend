@@ -379,24 +379,33 @@ export const deleteAddress = async (req, res) => {
 // getallusers
 export const getAllUsers = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
+    const { page = 1, limit = 10, search } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const totalUsers = await User.countDocuments();
-    const users = await User.find({}, '-password -tokenVersion')
+    let filter = {};
+    if (search) {
+      filter.$or = [
+        { firstName: { $regex: search, $options: "i" } },
+        { lastName: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const totalUsers = await User.countDocuments(filter);
+    const users = await User.find(filter, '-password -tokenVersion')
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit)
+      .limit(parseInt(limit))
       .lean();
 
     res.json({
       users,
       pagination: {
         total: totalUsers,
-        page,
-        limit,
-        totalPages: Math.ceil(totalUsers / limit)
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(totalUsers / parseInt(limit))
       }
     });
   } catch (err) {

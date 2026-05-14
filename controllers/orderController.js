@@ -3,6 +3,7 @@ import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import Offer from "../models/Offer.js";
 import { createShippingOrder, getTrackingDetails, cancelShippingOrder } from "../utils/shippingProviderSelector.js";
+import { calculateShippingCharge } from "../utils/shippingCalculator.js";
 
 const applyOffer = (offer, subtotal) => {
   if (!offer) return { discount: 0, total: subtotal };
@@ -121,7 +122,7 @@ export const placeOrder = async (req, res) => {
       weight: Number(weight) || 0.5  // Save weight — used by Shiprocket/Delhivery for AWB
     });
 
-    // 🚀 DYNAMIC COURIER ORDER CREATION
+    // 🚀 DYNAMIC COURIER ORDER CREATION  
     try {
       console.log(`🚀 Creating ${selectedCourier} order for:`, order._id);
 
@@ -132,9 +133,15 @@ export const placeOrder = async (req, res) => {
       order.shippingDetails = shippingResponse;
       order.shippingProvider = shippingResponse.provider;
       order.shippingCreated = true;
-      order.status = "confirmed"; // Auto confirm if shipping succeeds
 
-      // Maintain legacy fields for compatibility
+      // ✅ Only auto-confirm if AWB is successfully assigned
+      if (shippingResponse.awbCode) {
+        order.status = "confirmed"; 
+        console.log(`✅ ${selectedCourier} order created and confirmed:`, shippingResponse.awbCode);
+      } else {
+        console.warn(`⚠️ ${selectedCourier} order created but AWB assignment failed. Status remains pending.`);
+        order.shippingError = "AWB Assignment Failed (Check Wallet Balance)";
+      }
       order.shiprocketOrderId = shippingResponse.providerOrderId;
       order.awbCode = shippingResponse.awbCode;
       order.courierName = shippingResponse.courierName;
@@ -230,6 +237,27 @@ export const updateOrderStatus = async (req, res) => {
         const provider = order.selectedCourier || "shiprocket"; // Default to shiprocket if not selected
         console.log(`🚀 Creating ${provider} order via Admin for:`, orderId);
 
+        // 🔄 RECALCULATE SHIPPING CHARGES BEFORE CREATION
+        // This handles cases where switching couriers (e.g. Delhivery -> Shiprocket) 
+        // or stale prices might cause incorrect billing.
+        const newShippingCharge = await calculateShippingCharge(
+          provider, 
+          order.shippingAddress.pincode, 
+          order.weight || 0.5
+        );
+
+        if (newShippingCharge !== order.shippingCharges) {
+          console.log(`💰 Updating shipping charge from ${order.shippingCharges} to ${newShippingCharge}`);
+          order.shippingCharges = newShippingCharge;
+          // Recalculate total
+          const subtotal = order.subtotal || 0;
+          const discount = order.discount || 0;
+          const handling = order.handlingFee || 0;
+          order.total = subtotal - discount + newShippingCharge + handling;
+          // Note: If paymentStatus was 'paid', we should ideally only do this for COD or handle the difference.
+          // For now, we update as per user requirement.
+        }
+
         const shippingResponse = await createShippingOrder(provider, order);
 
         // Update with shipping details
@@ -244,7 +272,16 @@ export const updateOrderStatus = async (req, res) => {
         order.shipmentId = shippingResponse.shipmentId;
         order.shiprocketCreated = shippingResponse.provider === "shiprocket";
 
-        console.log(`✅ ${provider} order created:`, shippingResponse.awbCode);
+        // ✅ Only set status to confirmed if AWB is present
+        if (shippingResponse.awbCode) {
+          order.status = "confirmed";
+          console.log(`✅ ${provider} order created:`, shippingResponse.awbCode);
+        } else {
+          console.warn(`⚠️ ${provider} order created via Admin but AWB is missing.`);
+          // If the admin manually set status to 'confirmed', we might want to override this 
+          // or throw an error. For safety, we'll throw an error so the admin knows it's not ready.
+          throw new Error("Shipment created but AWB assignment failed. Please check your shipping provider panel (e.g. Wallet Balance).");
+        }
       } catch (shippingError) {
         const actualError =
           shippingError?.response?.data?.message ||
@@ -271,6 +308,12 @@ export const updateOrderStatus = async (req, res) => {
           console.log(`🛑 Cancelling ${provider} shipment for order:`, orderId);
           await cancelShippingOrder(provider, providerOrderId, awb);
           console.log(`✅ ${provider} shipment cancelled successfully`);
+          
+          // Update shipping status in DB so UI can reflect it
+          if (order.shippingDetails) {
+            order.shippingDetails.shippingStatus = "Cancelled";
+          }
+          order.shippingStatus = "Cancelled"; // Legacy/Sync field
         } catch (cancelError) {
           console.warn("⚠️ Provider cancellation failed (non-critical):", cancelError.message);
           // Cancellation on provider might fail if already shipped/cancelled, 
@@ -284,6 +327,13 @@ export const updateOrderStatus = async (req, res) => {
         order.cancelledBy = new mongoose.Types.ObjectId(adminId);
       }
       order.cancelledAt = new Date();
+    }
+
+    // 🛑 Prevent status change to 'confirmed' if AWB is missing
+    if (status === "confirmed" && !order.awbCode && !(order.shippingDetails?.awbCode)) {
+      return res.status(400).json({
+        message: "Cannot confirm order: AWB Code is missing. Please check your shipping provider panel or wallet balance.",
+      });
     }
 
     if (status) order.status = status;
@@ -331,5 +381,71 @@ export const getOrderTracking = async (req, res) => {
   } catch (err) {
     console.error("getOrderTracking error:", err);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ADMIN: Create Manual Shipping Order (Generic for any provider)
+export const createManualShippingOrder = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const order = await Order.findById(orderId).populate("items.product");
+
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    if (order.shippingDetails?.created || order.shiprocketCreated) {
+      return res.status(400).json({ message: "Shipping order already created" });
+    }
+
+    const provider = order.selectedCourier || "shiprocket";
+    console.log(`🚀 Manual Creation: ${provider} for order ${orderId}`);
+
+    // 🔄 Recalculate charges (Same logic as status update)
+    const newShippingCharge = await calculateShippingCharge(
+      provider,
+      order.shippingAddress.pincode,
+      order.weight || 0.5
+    );
+
+    if (newShippingCharge !== order.shippingCharges) {
+      order.shippingCharges = newShippingCharge;
+      const subtotal = order.subtotal || 0;
+      const discount = order.discount || 0;
+      const handling = order.handlingFee || 0;
+      order.total = subtotal - discount + newShippingCharge + handling;
+    }
+
+    // Call the universal selector
+    const shippingResponse = await createShippingOrder(provider, order);
+
+    // Update DB
+    order.shippingDetails = shippingResponse;
+    order.shippingCreated = true;
+    order.shippingError = null;
+
+    // Legacy fields for backward compatibility
+    order.shiprocketOrderId = shippingResponse.providerOrderId;
+    order.awbCode = shippingResponse.awbCode;
+    order.courierName = shippingResponse.courierName;
+    order.shipmentId = shippingResponse.shipmentId;
+    order.shiprocketCreated = shippingResponse.provider === "shiprocket";
+    
+    // ✅ Only auto confirm if AWB is present
+    if (shippingResponse.awbCode) {
+      order.status = "confirmed";
+    } else {
+      order.shippingError = "AWB missing - check provider panel";
+    }
+
+    await order.save();
+
+    res.json({
+      success: true,
+      message: `${provider} order created successfully`,
+      shipping: shippingResponse,
+    });
+  } catch (error) {
+    const msg = error?.response?.data?.message || error?.message || "Manual shipping creation failed";
+    console.error("❌ Manual Shipping Error:", msg);
+    res.status(500).json({ message: msg });
   }
 };

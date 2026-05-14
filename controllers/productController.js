@@ -96,29 +96,36 @@ export const createProduct = async (req, res) => {
 // LIST
 export const listProducts = async (req, res) => {
   try {
-    const { status, sort = "", minPrice, maxPrice } = req.query;
+    const { status, sort = "", minPrice, maxPrice, page = 1, limit = 10, search } = req.query;
 
     let filter = {};
 
     // Status filter
     if (status === 'active') filter = { isActive: true };
-    if (status === 'inactive') filter = { isActive: false };
-    if (!status) filter = { isActive: true }; // Default: only active products
+    else if (status === 'inactive') filter = { isActive: false };
 
-    //  Price filter based on finalPrice
+    // Search filter
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    // Price filter based on finalPrice
     if (minPrice !== undefined || maxPrice !== undefined) {
       filter.finalPrice = {};
       if (minPrice) filter.finalPrice.$gte = Number(minPrice);
       if (maxPrice) filter.finalPrice.$lte = Number(maxPrice);
     }
 
-    //  Sorting
-    let sortOption = { createdAt: -1 }; // Default: newest first
+    // Sorting
+    let sortOption = { createdAt: -1 };
 
     if (sort === "price_asc") {
-      sortOption = { finalPrice: 1 };  // Low to High
+      sortOption = { finalPrice: 1 };
     } else if (sort === "price_desc") {
-      sortOption = { finalPrice: -1 }; // High to Low
+      sortOption = { finalPrice: -1 };
     } else if (sort === "newest") {
       sortOption = { createdAt: -1 };
     } else if (sort === "oldest") {
@@ -129,12 +136,23 @@ export const listProducts = async (req, res) => {
       sortOption = { name: -1 };
     }
 
+    const skip = (Number(page) - 1) * Number(limit);
+    const total = await Product.countDocuments(filter);
+
     const products = await Product.find(filter)
       .populate("category", "name slug")
-      .sort(sortOption);
+      .sort(sortOption)
+      .skip(skip)
+      .limit(Number(limit));
 
     res.json({
       products,
+      pagination: {
+        total,
+        page: Number(page),
+        limit: Number(limit),
+        totalPages: Math.ceil(total / Number(limit))
+      },
       filters: {
         minPrice: minPrice ? Number(minPrice) : null,
         maxPrice: maxPrice ? Number(maxPrice) : null,

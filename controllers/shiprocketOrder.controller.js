@@ -1,5 +1,6 @@
 import { shiprocketRequest } from "../services/shiprocket.service.js";
 import Order from "../models/Order.js";
+import { calculateShippingCharge } from "../utils/shippingCalculator.js";
 
 // Create Shiprocket order for existing order
 export const createOrderForExisting = async (req, res) => {
@@ -25,6 +26,24 @@ export const createOrderForExisting = async (req, res) => {
 
     if (order.shiprocketCreated) {
       return res.status(400).json({ message: "Shiprocket order already created" });
+    }
+
+    // 🔄 RECALCULATE SHIPPING CHARGES
+    // If order was originally Delhivery or has stale 0 shipping, update it
+    const newShippingCharge = await calculateShippingCharge(
+      "shiprocket", 
+      order.shippingAddress.pincode, 
+      order.weight || 0.5
+    );
+
+    if (newShippingCharge !== order.shippingCharges) {
+      console.log(`💰 Manual Creation: Updating shipping from ${order.shippingCharges} to ${newShippingCharge}`);
+      order.shippingCharges = newShippingCharge;
+      const subtotal = order.subtotal || 0;
+      const discount = order.discount || 0;
+      const handling = order.handlingFee || 0;
+      order.total = subtotal - discount + newShippingCharge + handling;
+      // We'll save after successful creation
     }
 
     // Create Shiprocket order
@@ -79,8 +98,26 @@ export const createOrderForExisting = async (req, res) => {
 export const getTrackingInfo = async (req, res) => {
   try {
     const { awbCode } = req.params;
-    const trackingData = await getShiprocketTracking(awbCode);
-    res.json(trackingData);
+    const response = await getShiprocketTracking(awbCode);
+
+    // Normalize Shiprocket response for frontend
+    // Shiprocket response structure can be complex, so we check multiple places
+    const tracking = response?.tracking_data?.shipment_track?.[0] || {};
+    const activities = response?.tracking_data?.shipment_track_activities || [];
+    const lastActivity = activities.length > 0 ? activities[0] : {};
+
+    res.json({
+      status: tracking.current_status || lastActivity.status || "N/A",
+      location: 
+        tracking.current_location || 
+        lastActivity.location || 
+        tracking.scanned_location || 
+        tracking.city ||
+        (tracking.state ? `${tracking.city || ''} ${tracking.state}` : null) ||
+        "N/A",
+      lastUpdate: tracking.current_timestamp || lastActivity.date || "N/A",
+      raw: response
+    });
   } catch (error) {
     console.error("Get tracking error:", error);
     res.status(500).json({
@@ -159,7 +196,9 @@ export const createShiprocketOrder = async (order) => {
       })),
 
       payment_method: order.paymentMethod === "COD" ? "COD" : "Prepaid",
-      sub_total: order.total || 100,
+      sub_total: order.subtotal || 100,
+      shipping_charges: order.shippingCharges || 0,
+      total_discount: order.discount || 0,
 
       length: 10,
       breadth: 10,

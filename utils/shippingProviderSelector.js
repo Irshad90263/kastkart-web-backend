@@ -6,7 +6,7 @@ import { createDelhiveryOrder, getDelhiveryTracking, cancelDelhiveryOrder } from
  */
 export const createShippingOrder = async (provider, order) => {
   console.log(`🚚 Selecting shipping provider: ${provider}`);
-  
+
   switch (provider?.toLowerCase()) {
     case "shiprocket":
       return await createShiprocketOrder(order);
@@ -36,7 +36,7 @@ export const getTrackingDetails = async (provider, awb) => {
  */
 export const cancelShippingOrder = async (provider, orderId, awb) => {
   console.log(`🚚 Cancelling order on provider: ${provider}`);
-  
+
   switch (provider?.toLowerCase()) {
     case "shiprocket":
       return await cancelShiprocketOrder(orderId);

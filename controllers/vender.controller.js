@@ -142,9 +142,37 @@ export const createVendor = async (req, res) => {
 // @access  Private (Admin)
 export const getAllVendors = async (req, res) => {
   try {
-    const vendors = await Vendor.find().sort({ createdAt: -1 });
-    res.status(200).json({ success: true, count: vendors.length, vendors });
+    const { page = 1, limit = 10, search } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    let filter = {};
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { "contactDetails.phoneNumber": { $regex: search, $options: "i" } },
+        { "contactDetails.email": { $regex: search, $options: "i" } },
+        { "orchardAddress.address": { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const totalVendors = await Vendor.countDocuments(filter);
+    const vendors = await Vendor.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    res.status(200).json({
+      success: true,
+      vendors,
+      pagination: {
+        total: totalVendors,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(totalVendors / parseInt(limit))
+      }
+    });
   } catch (error) {
+    console.error("getAllVendors error:", error);
     res.status(500).json({ success: false, message: "Server Error" });
   }
 };

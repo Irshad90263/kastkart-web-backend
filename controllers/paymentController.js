@@ -20,7 +20,7 @@ export const createPaymentOrder = async (req, res) => {
     }
 
     const options = {
-      amount: amount * 100, // Razorpay expects amount in paise
+      amount: Math.round(Number(amount) * 100), // Razorpay expects amount in paise (must be an integer)
       currency,
       receipt: receipt || `receipt_${Date.now()}`,
     };

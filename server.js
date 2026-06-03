@@ -31,6 +31,7 @@ import payMethodRoutes from "./routes/payMethodRoutes.js";
 import venderRoutes from "./routes/venderRoutes.js";
 import corporateInquiryRoutes from "./routes/corporateInquiryRoutes.js";
 import orchardRoutes from "./routes/orchardRoutes.js";
+import bookingRoutes from "./routes/bookingRoutes.js";
 
 
 // User routes
@@ -94,6 +95,7 @@ app.use("/api/venders", venderRoutes);
 app.use("/api/corporate-inquiry", corporateInquiryRoutes);
 app.use("/api/delivery", deliveyRoutes);
 app.use("/api/orchards", orchardRoutes);
+app.use("/api/bookings", bookingRoutes);
 
 
 // User routes

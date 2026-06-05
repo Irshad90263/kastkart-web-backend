@@ -23,6 +23,11 @@ const productSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     slug: { type: String, unique: true, index: true },
 
+    variety: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Variety",
+      required: true,
+    },
     category: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Category",
@@ -49,8 +54,9 @@ const productSchema = new mongoose.Schema(
 
     isActive: { type: Boolean, default: true },
   },
-  { timestamps: true }
+  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );
+
 
 productSchema.pre("save", function (next) {
   if (!this.slug && this.name) {

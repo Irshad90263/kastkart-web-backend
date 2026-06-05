@@ -1,6 +1,5 @@
 // controllers/categoryController.js
 import Category from "../models/Category.js";
-import Product from "../models/Product.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -8,43 +7,63 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// @desc    Create a new category
+// @route   POST /api/product-categories
+// @access  Private (Admin)
 export const createCategory = async (req, res) => {
   try {
     const { name, description } = req.body;
-    if (!name) return res.status(400).json({ message: "name is required" });
 
-    const exists = await Category.findOne({ name });
-    if (exists) return res.status(409).json({ message: "Category exists" });
+    if (!name) {
+      return res.status(400).json({ message: "name is required" });
+    }
 
-    // 🔥 Image handling - SIRF YEH 5 LINES ADD
+    const trimmedName = name.trim();
+
+    // Check if category already exists (case-insensitive check)
+    const exists = await Category.findOne({ name: { $regex: new RegExp(`^${trimmedName}$`, "i") } });
+    if (exists) {
+      // Clean up uploaded file if validation fails
+      if (req.file) {
+        const filePath = path.join(__dirname, "..", "uploads", "categories", req.file.filename);
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      }
+      return res.status(409).json({ message: "Category with this name already exists" });
+    }
+
     let imageData = null;
     if (req.file) {
+      const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
       imageData = {
-        url: `${process.env.BASE_URL}/uploads/categories/${req.file.filename}`,
+        url: `${baseUrl}/uploads/categories/${req.file.filename}`,
         filename: req.file.filename
       };
     }
 
-    const category = await Category.create({ 
-      name, 
-      description,
-      image: imageData  // 🔥 YEH LINE ADD
+    const category = await Category.create({
+      name: trimmedName,
+      description: description ? description.trim() : "",
+      image: imageData
     });
-    res.status(201).json({ message: "Category created", category });
+
+    res.status(201).json({ message: "Category created successfully", category });
   } catch (err) {
     console.error("createCategory error:", err);
+    // Clean up uploaded file if save fails
+    if (req.file) {
+      const filePath = path.join(__dirname, "..", "uploads", "categories", req.file.filename);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
     res.status(500).json({ message: "Server error" });
   }
 };
 
+// @desc    Get all categories
+// @route   GET /api/product-categories
+// @access  Public
 export const listCategories = async (req, res) => {
   try {
-    const { status } = req.query;
-    let filter = {};
-    if (status === 'active') filter = { isActive: true };
-    if (status === 'inactive') filter = { isActive: false };
-    
-    const categories = await Category.find(filter).sort({ name: 1 });
+    const categories = await Category.find().sort({ name: 1 });
     res.json({ categories });
   } catch (err) {
     console.error("listCategories error:", err);
@@ -52,44 +71,77 @@ export const listCategories = async (req, res) => {
   }
 };
 
+// @desc    Get a single category by ID
+// @route   GET /api/product-categories/:id
+// @access  Public
 export const getCategory = async (req, res) => {
   try {
-    const { idOrSlug } = req.params;
-    const category =
-      (await Category.findOne({ slug: idOrSlug })) ||
-      (await Category.findById(idOrSlug));
-    if (!category) return res.status(404).json({ message: "Not found" });
+    const { id } = req.params;
+    const category = await Category.findById(id);
+    if (!category) {
+      return res.status(404).json({ message: "Category not found" });
+    }
     res.json({ category });
   } catch (err) {
     console.error("getCategory error:", err);
+    if (err.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid category ID" });
+    }
     res.status(500).json({ message: "Server error" });
   }
 };
 
+// @desc    Update a category by ID
+// @route   PUT /api/product-categories/:id
+// @access  Private (Admin)
 export const updateCategory = async (req, res) => {
   try {
-    const { idOrSlug } = req.params;
-    let category =
-      (await Category.findOne({ slug: idOrSlug })) ||
-      (await Category.findById(idOrSlug));
-    if (!category) return res.status(404).json({ message: "Not found" });
+    const { id } = req.params;
+    const { name, description, removeImage } = req.body;
 
-    const { name, description, isActive, removeImage } = req.body; // 🔥 removeImage ADD
-
-    if (name) {
-      category.name = name;
-      category.slug =
-        name
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/(^-|-$)+/g, "") + "-" + Date.now();
+    const category = await Category.findById(id);
+    if (!category) {
+      // Clean up uploaded file if category not found
+      if (req.file) {
+        const filePath = path.join(__dirname, "..", "uploads", "categories", req.file.filename);
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      }
+      return res.status(404).json({ message: "Category not found" });
     }
-    if (description !== undefined) category.description = description;
-    if (isActive !== undefined) category.isActive = !!isActive;
 
-    // 🔥 IMAGE HANDLING - SIRF YEH 15 LINES ADD
+    if (name !== undefined) {
+      const trimmedName = name.trim();
+      if (!trimmedName) {
+        // Clean up uploaded file
+        if (req.file) {
+          const filePath = path.join(__dirname, "..", "uploads", "categories", req.file.filename);
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        }
+        return res.status(400).json({ message: "name cannot be empty" });
+      }
+
+      // Check if another category has the same name
+      const exists = await Category.findOne({
+        name: { $regex: new RegExp(`^${trimmedName}$`, "i") },
+        _id: { $ne: id }
+      });
+      if (exists) {
+        // Clean up uploaded file
+        if (req.file) {
+          const filePath = path.join(__dirname, "..", "uploads", "categories", req.file.filename);
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        }
+        return res.status(409).json({ message: "Category with this name already exists" });
+      }
+      category.name = trimmedName;
+    }
+
+    if (description !== undefined) {
+      category.description = description.trim();
+    }
+
+    // Image removal
     if (removeImage === 'true' || removeImage === true) {
-      // Delete old image file
       if (category.image && category.image.filename) {
         const oldImagePath = path.join(__dirname, "..", "uploads", "categories", category.image.filename);
         if (fs.existsSync(oldImagePath)) {
@@ -98,48 +150,51 @@ export const updateCategory = async (req, res) => {
       }
       category.image = null;
     }
-    
+
+    // Image upload/replacement
     if (req.file) {
-      // Delete old image if exists
       if (category.image && category.image.filename) {
         const oldImagePath = path.join(__dirname, "..", "uploads", "categories", category.image.filename);
         if (fs.existsSync(oldImagePath)) {
           fs.unlinkSync(oldImagePath);
         }
       }
-      // Add new image
+      const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
       category.image = {
-        url: `${process.env.BASE_URL}/uploads/categories/${req.file.filename}`,
+        url: `${baseUrl}/uploads/categories/${req.file.filename}`,
         filename: req.file.filename
       };
     }
 
     await category.save();
-    res.json({ message: "Category updated", category });
+    res.json({ message: "Category updated successfully", category });
   } catch (err) {
     console.error("updateCategory error:", err);
+    // Clean up uploaded file if update fails
+    if (req.file) {
+      const filePath = path.join(__dirname, "..", "uploads", "categories", req.file.filename);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+    if (err.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid category ID" });
+    }
     res.status(500).json({ message: "Server error" });
   }
 };
 
+// @desc    Delete a category by ID
+// @route   DELETE /api/product-categories/:id
+// @access  Private (Admin)
 export const deleteCategory = async (req, res) => {
   try {
-    const { idOrSlug } = req.params;
-    let category =
-      (await Category.findOne({ slug: idOrSlug })) ||
-      (await Category.findById(idOrSlug));
-    if (!category) return res.status(404).json({ message: "Not found" });
+    const { id } = req.params;
 
-    const productCount = await Product.countDocuments({
-      category: category._id,
-    });
-    if (productCount > 0) {
-      return res
-        .status(400)
-        .json({ message: "Category has products, cannot delete" });
+    const category = await Category.findById(id);
+    if (!category) {
+      return res.status(404).json({ message: "Category not found" });
     }
 
-    // 🔥 DELETE IMAGE FILE - SIRF YEH 6 LINES ADD
+    // Clean up local image file
     if (category.image && category.image.filename) {
       const imagePath = path.join(__dirname, "..", "uploads", "categories", category.image.filename);
       if (fs.existsSync(imagePath)) {
@@ -147,10 +202,13 @@ export const deleteCategory = async (req, res) => {
       }
     }
 
-    await Category.deleteOne({ _id: category._id });
-    res.json({ message: "Category deleted" });
+    await Category.deleteOne({ _id: id });
+    res.json({ message: "Category deleted successfully" });
   } catch (err) {
     console.error("deleteCategory error:", err);
+    if (err.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid category ID" });
+    }
     res.status(500).json({ message: "Server error" });
   }
 };

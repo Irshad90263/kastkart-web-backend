@@ -2,6 +2,7 @@ import Booking from "../models/Booking.js";
 import jwt from "jsonwebtoken";
 import Razorpay from "razorpay";
 import crypto from "crypto";
+import XLSX from "xlsx";
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
@@ -107,6 +108,7 @@ export const getAllBookings = async (req, res) => {
 
     const total = await Booking.countDocuments(query);
     const bookings = await Booking.find(query)
+      .populate("mangoCategory", "name")
       .populate("mangoVariety", "name slug")
       .populate({
         path: "mangoName",
@@ -147,6 +149,7 @@ export const getAllBookings = async (req, res) => {
 export const getBookingById = async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id)
+      .populate("mangoCategory", "name")
       .populate("mangoVariety", "name slug")
       .populate({
         path: "mangoName",
@@ -193,6 +196,7 @@ export const getUserBookings = async (req, res) => {
     }
 
     const bookings = await Booking.find({ userId })
+      .populate("mangoCategory", "name")
       .populate("mangoVariety", "name slug")
       .populate("mangoName", "name slug finalPrice mainImage")
       .sort({ createdAt: -1 });
@@ -227,6 +231,7 @@ export const updateBookingStatus = async (req, res) => {
       updateData,
       { new: true, runValidators: true }
     )
+      .populate("mangoCategory", "name")
       .populate("mangoVariety", "name slug")
       .populate({
         path: "mangoName",
@@ -383,5 +388,65 @@ export const verifyBookingPaymentAndSave = async (req, res) => {
       message: "Failed to verify payment and save booking",
       error: error.message,
     });
+  }
+};
+
+export const exportBookingsToExcel = async (req, res) => {
+  try {
+    const bookings = await Booking.find()
+      .populate("mangoCategory", "name")
+      .populate("mangoVariety", "name slug")
+      .populate({
+        path: "mangoName",
+        select: "name slug finalPrice mainImage vendor_id",
+        populate: {
+          path: "vendor_id",
+          select: "name contactDetails"
+        }
+      })
+      .populate("userId", "firstName lastName email")
+      .sort({ createdAt: -1 });
+
+    const data = bookings.map(b => ({
+      "Booking ID": b.bookingNo || "-",
+      "Customer Name": b.fullName || "-",
+      "Mobile Number": b.mobileNumber || "-",
+      "Alternate Mobile": b.alternateMobileNumber || "-",
+      "Email": b.emailId || "-",
+      "Address": b.completeAddress || "-",
+      "City": b.city || "-",
+      "State": b.state || "-",
+      "Pincode": b.pincode || "-",
+      "Landmark": b.landmark || "-",
+      "Category": b.mangoCategory?.name || "-",
+      "Variety": b.mangoVariety?.name || "-",
+      "Product Name": b.mangoName?.name || "-",
+      "Box Size": b.boxSize || "-",
+      "Number of Boxes": b.numberOfBoxes || 0,
+      "Preferred Delivery Week": b.preferredDeliveryWeek || "-",
+      "Special Instructions": b.specialInstructions || "-",
+      "Product Price": b.productPrice || 0,
+      "Advance Paid": b.bookingAmountPaid || "-",
+      "Total Amount": b.totalAmount || 0,
+      "Payment Mode": b.paymentMode || "-",
+      "Transaction ID": b.transactionId || "-",
+      "Referral Source": b.referralSource || "-",
+      "Status": b.status || "-",
+      "Payment Status": b.paymentStatus || "-",
+      "Created At": b.createdAt ? new Date(b.createdAt).toLocaleString("en-IN") : "-",
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Bookings");
+
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+    res.setHeader("Content-Disposition", 'attachment; filename="bookings.xlsx"');
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.send(buffer);
+  } catch (error) {
+    console.error("Export Excel error:", error);
+    res.status(500).json({ success: false, message: "Export failed", error: error.message });
   }
 };

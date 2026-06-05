@@ -1,0 +1,30 @@
+// models/Variety.js
+import mongoose from "mongoose";
+
+const varietySchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, unique: true, trim: true },
+    slug: { type: String, unique: true, index: true },
+    category: { type: mongoose.Schema.Types.ObjectId, ref: "Category", required: true },
+    description: { type: String, default: "" },
+    isActive: { type: Boolean, default: true },
+    image: {
+      url: { type: String },
+      filename: { type: String }
+    }
+  },
+  { timestamps: true }
+);
+
+varietySchema.pre("save", function (next) {
+  if (!this.slug && this.name) {
+    this.slug =
+      this.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)+/g, "") + "-" + Date.now();
+  }
+  next();
+});
+
+export default mongoose.model("Variety", varietySchema, "varieties");

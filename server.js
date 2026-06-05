@@ -15,7 +15,7 @@ const __dirname = path.dirname(__filename);
 
 import adminRoutes from "./routes/adminRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
-import categoryRoutes from "./routes/categoryRoutes.js";
+import varietyRoutes from "./routes/varietyRoutes.js";
 import offerRoutes from "./routes/offerRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import enquiryRoutes from "./routes/enquiryRoutes.js";
@@ -32,6 +32,8 @@ import venderRoutes from "./routes/venderRoutes.js";
 import corporateInquiryRoutes from "./routes/corporateInquiryRoutes.js";
 import orchardRoutes from "./routes/orchardRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
+import categoryRoutes from "./routes/categoryRoutes.js";
+
 
 
 // User routes
@@ -78,7 +80,8 @@ console.log("📁 Static files served from: /uploads");
 // Routes
 app.use("/api/admin", adminRoutes);
 app.use("/api/products", productRoutes);
-app.use("/api/categories", categoryRoutes);
+app.use("/api/categories", varietyRoutes);
+app.use("/api/varieties", varietyRoutes);
 app.use("/api/offers", offerRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/enquiry", enquiryRoutes);
@@ -96,6 +99,8 @@ app.use("/api/corporate-inquiry", corporateInquiryRoutes);
 app.use("/api/delivery", deliveyRoutes);
 app.use("/api/orchards", orchardRoutes);
 app.use("/api/bookings", bookingRoutes);
+app.use("/api/product-categories", categoryRoutes);
+
 
 
 // User routes

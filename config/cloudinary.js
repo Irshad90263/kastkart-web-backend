@@ -33,12 +33,13 @@ const uploadsDir = path.join(__dirname, "../uploads");
 const productsDir = path.join(uploadsDir, "products");
 const slidersDir = path.join(uploadsDir, "sliders");
 const videosDir = path.join(uploadsDir, "videos");
+const varietiesDir = path.join(uploadsDir, "varieties");
 const categoriesDir = path.join(uploadsDir, "categories");
 const vendersDir = path.join(uploadsDir, "venders");
 const blogsDir = path.join(uploadsDir, "blogs");
 const orchardsDir = path.join(uploadsDir, "orchards");
 
-[uploadsDir, productsDir, slidersDir, videosDir, categoriesDir, vendersDir, blogsDir, orchardsDir].forEach(dir => {
+[uploadsDir, productsDir, slidersDir, videosDir, varietiesDir, categoriesDir, vendersDir, blogsDir, orchardsDir].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -47,7 +48,31 @@ const orchardsDir = path.join(uploadsDir, "orchards");
 
 // ==================== LOCAL STORAGE SETUP ====================
 
-// CATEGORY IMAGE - Local Storage (🔥 ADD THIS NEW SECTION)
+// VARIETY IMAGE - Local Storage (🔥 ADD THIS NEW SECTION)
+const varietyStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, varietiesDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, "var-" + uniqueSuffix + path.extname(file.originalname));
+  },
+});
+
+const varietyMulter = multer({
+  storage: varietyStorage,
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB limit
+  fileFilter: (req, file, cb) => {
+    const allowed = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    if (allowed.includes(file.mimetype)) return cb(null, true);
+    cb(new Error("Invalid file type. Only JPEG, PNG, WebP allowed"), false);
+  },
+});
+
+const uploadVarietyImage = varietyMulter.single("image");  // 🔥 "image" matches frontend field name
+const uploadCategoryImage = uploadVarietyImage; // Backward compatibility alias
+
+// CATEGORY IMAGE - Local Storage
 const categoryStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, categoriesDir);
@@ -68,7 +93,7 @@ const categoryMulter = multer({
   },
 });
 
-const uploadCategoryImage = categoryMulter.single("image");  // 🔥 "image" matches frontend field name
+const uploadNewCategoryImage = categoryMulter.single("image");
 
 // PRODUCT IMAGES - Local Storage
 const productStorage = multer.diskStorage({
@@ -232,7 +257,9 @@ export {
   uploadProductImages,
   uploadSliderImage,
   uploadVideo,
+  uploadVarietyImage,
   uploadCategoryImage,
+  uploadNewCategoryImage,
   uploadVendorImages,
   uploadOrchardImage,
 };

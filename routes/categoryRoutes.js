@@ -8,15 +8,15 @@ import {
   deleteCategory,
 } from "../controllers/categoryController.js";
 import { requireAuth } from "../middleware/auth.js";
-import { uploadCategoryImage } from "../config/cloudinary.js";
+import { uploadNewCategoryImage } from "../config/cloudinary.js";
 
 const router = express.Router();
 
 router.get("/", listCategories);
-router.get("/:idOrSlug", getCategory);
+router.get("/:id", getCategory);
 
-router.post("/", requireAuth, uploadCategoryImage, createCategory); 
-router.put("/:idOrSlug", requireAuth, uploadCategoryImage, updateCategory); 
-router.delete("/:idOrSlug", requireAuth, deleteCategory);
+router.post("/", requireAuth, uploadNewCategoryImage, createCategory);
+router.put("/:id", requireAuth, uploadNewCategoryImage, updateCategory);
+router.delete("/:id", requireAuth, deleteCategory);
 
 export default router;

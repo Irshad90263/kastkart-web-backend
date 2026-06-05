@@ -8,6 +8,7 @@ import {
   deleteBooking,
   createBookingPaymentOrder,
   verifyBookingPaymentAndSave,
+  exportBookingsToExcel,
 } from "../controllers/bookingController.js";
 import { requireAuth } from "../middleware/auth.js";
 import { authenticateUser } from "../middleware/userAuth.js";
@@ -25,6 +26,7 @@ router.post("/verify-payment", verifyBookingPaymentAndSave);
 router.get("/my-bookings", authenticateUser, getUserBookings);
 
 // Admin Protected Routes
+router.get("/admin/export/excel", requireAuth, exportBookingsToExcel);
 router.get("/admin/all", requireAuth, getAllBookings);
 router.get("/:id", requireAuth, getBookingById);
 router.put("/:id/status", requireAuth, updateBookingStatus);

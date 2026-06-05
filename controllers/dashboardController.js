@@ -2,7 +2,7 @@
 import moment from "moment-timezone";
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
-import Category from "../models/Category.js";
+import Variety from "../models/Variety.js";
 import Offer from "../models/Offer.js";
 import Enquiry from "../models/Enquiry.js";
 
@@ -19,8 +19,8 @@ export const getDashboardStats = async (req, res) => {
       totalOrders,
       totalProducts,
       activeProducts,
-      totalCategories,
-      activeCategories,
+      totalVarieties,
+      activeVarieties,
       totalEnquiries,
       unreadEnquiries,
       activeOffersCount,
@@ -40,8 +40,8 @@ export const getDashboardStats = async (req, res) => {
       Order.countDocuments(),
       Product.countDocuments(),
       Product.countDocuments({ isActive: true }),
-      Category.countDocuments(),
-      Category.countDocuments({ isActive: true }),
+      Variety.countDocuments(),
+      Variety.countDocuments({ isActive: true }),
       Enquiry.countDocuments(),
       Enquiry.countDocuments({ isRead: false }),
       Offer.countDocuments({ isActive: true }),
@@ -94,22 +94,22 @@ export const getDashboardStats = async (req, res) => {
         { $sort: { _id: 1 } },
       ]),
 
-      // Products by category (for pie chart)
+      // Products by variety (for pie chart)
       Product.aggregate([
         {
           $lookup: {
-            from: "categories",
-            localField: "category",
+            from: "varieties",
+            localField: "variety",
             foreignField: "_id",
-            as: "category",
+            as: "variety",
           },
         },
-        { $unwind: "$category" },
+        { $unwind: "$variety" },
         {
           $group: {
-            _id: "$category._id",
-            name: { $first: "$category.name" },
-            slug: { $first: "$category.slug" },
+            _id: "$variety._id",
+            name: { $first: "$variety.name" },
+            slug: { $first: "$variety.slug" },
             totalProducts: { $sum: 1 },
             activeProducts: {
               $sum: {
@@ -131,7 +131,7 @@ export const getDashboardStats = async (req, res) => {
       Product.find()
         .sort({ createdAt: -1 })
         .limit(10)
-        .populate("category", "name slug"),
+        .populate("variety", "name slug"),
 
       // Latest 5 enquiries
       Enquiry.find()
@@ -163,8 +163,9 @@ export const getDashboardStats = async (req, res) => {
       orders: d.orders,
     }));
 
-    const productsByCategory = productsByCategoryAgg.map((c) => ({
+    const productsByVariety = productsByCategoryAgg.map((c) => ({
       categoryId: c._id,
+      varietyId: c._id,
       name: c.name,
       slug: c.slug,
       totalProducts: c.totalProducts,
@@ -180,8 +181,10 @@ export const getDashboardStats = async (req, res) => {
         monthRevenue,
         totalProducts,
         activeProducts,
-        totalCategories,
-        activeCategories,
+        totalVarieties,
+        activeVarieties,
+        totalCategories: totalVarieties, // backward compatibility
+        activeCategories: activeVarieties, // backward compatibility
         totalEnquiries,
         unreadEnquiries,
         activeOffers: activeOffersCount,
@@ -192,7 +195,8 @@ export const getDashboardStats = async (req, res) => {
         ordersByStatus, // donut/pie
         ordersByPaymentMethod,
         ordersByPaymentStatus,
-        productsByCategory, // pie chart
+        productsByVariety, // variety chart
+        productsByCategory: productsByVariety, // backward compatibility
       },
       tables: {
         latestOrders,

@@ -27,6 +27,7 @@
     "multer": "^2.0.2",
     "multer-storage-cloudinary": "^4.0.0",
     "razorpay": "^2.9.4",
-    "slugify": "^1.6.9"
+    "slugify": "^1.6.9",
+    "xlsx": "^0.18.5"
   }
 }

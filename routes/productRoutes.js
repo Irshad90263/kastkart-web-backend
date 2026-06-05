@@ -15,8 +15,9 @@ import { uploadProductImages } from "../config/cloudinary.js";
 const router = express.Router();
 
 router.get("/", listProducts);
-router.get("/:idOrSlug", getProduct);
 router.get("/by-category/:idOrSlug", listProductsByCategory);
+router.get("/by-variety/:idOrSlug", listProductsByCategory);
+router.get("/:idOrSlug", getProduct);
 
 router.post("/", requireAuth, uploadProductImages, createProduct);
 router.put("/:idOrSlug", requireAuth, uploadProductImages, updateProduct);

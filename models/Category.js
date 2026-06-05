@@ -3,10 +3,8 @@ import mongoose from "mongoose";
 
 const categorySchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, unique: true, trim: true },
-    slug: { type: String, unique: true, index: true },
+    name: { type: String, required: true, trim: true },
     description: { type: String, default: "" },
-    isActive: { type: Boolean, default: true },
     image: {
       url: { type: String },
       filename: { type: String }
@@ -14,16 +12,5 @@ const categorySchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
-categorySchema.pre("save", function (next) {
-  if (!this.slug && this.name) {
-    this.slug =
-      this.name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/(^-|-$)+/g, "") + "-" + Date.now();
-  }
-  next();
-});
 
 export default mongoose.model("Category", categorySchema);

@@ -51,9 +51,14 @@ const bookingSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    mangoVariety: {
+    mangoCategory: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Category",
+      required: true,
+    },
+    mangoVariety: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Variety",
       required: true,
     },
     mangoName: {

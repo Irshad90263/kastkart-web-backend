@@ -9,6 +9,8 @@ import {
   createBookingPaymentOrder,
   verifyBookingPaymentAndSave,
   exportBookingsToExcel,
+  createRemainingPaymentOrder,
+  verifyRemainingPayment,
 } from "../controllers/bookingController.js";
 import { requireAuth } from "../middleware/auth.js";
 import { authenticateUser } from "../middleware/userAuth.js";
@@ -24,6 +26,8 @@ router.post("/verify-payment", verifyBookingPaymentAndSave);
 
 // User Protected Route - Get My Bookings
 router.get("/my-bookings", authenticateUser, getUserBookings);
+router.post("/create-remaining-payment-order", authenticateUser, createRemainingPaymentOrder);
+router.post("/verify-remaining-payment", authenticateUser, verifyRemainingPayment);
 
 // Admin Protected Routes
 router.get("/admin/export/excel", requireAuth, exportBookingsToExcel);

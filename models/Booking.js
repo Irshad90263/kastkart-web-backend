@@ -116,12 +116,12 @@ const bookingSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "confirmed", "dispatched", "delivered", "cancelled"],
+      enum: ["pending", "order placed", "confirmed", "shipped", "delivered", "cancelled"],
       default: "pending",
     },
     paymentStatus: {
       type: String,
-      enum: ["pending", "paid", "failed"],
+      enum: ["pending", "advance paid", "full paid", "failed"],
       default: "pending",
     },
     userId: {
@@ -129,6 +129,10 @@ const bookingSchema = new mongoose.Schema(
       ref: "User",
       required: false,
     },
+    awbCode: { type: String },
+    shiprocketOrderId: { type: String },
+    shipmentId: { type: String },
+    courierName: { type: String },
   },
   { timestamps: true }
 );

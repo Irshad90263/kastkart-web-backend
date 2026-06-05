@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import Razorpay from "razorpay";
 import crypto from "crypto";
 import XLSX from "xlsx";
+import { createShiprocketOrder, cancelShiprocketOrder } from "./shiprocketOrder.controller.js";
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
@@ -226,7 +227,71 @@ export const updateBookingStatus = async (req, res) => {
     if (status) updateData.status = status;
     if (paymentStatus) updateData.paymentStatus = paymentStatus;
 
-    const booking = await Booking.findByIdAndUpdate(
+    let booking = await Booking.findById(req.params.id).populate("mangoName", "name _id");
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found",
+      });
+    }
+
+    if (status === "shipped" && booking.status !== "shipped" && !booking.awbCode) {
+      try {
+        const dummyOrder = {
+          _id: booking._id,
+          paymentMethod: booking.paymentMode === "Online" ? "Prepaid" : "COD",
+          shippingAddress: {
+            name: booking.fullName || "Customer",
+            addressLine1: booking.completeAddress || "Address",
+            addressLine2: booking.landmark || "",
+            city: booking.city || "City",
+            pincode: booking.pincode || "000000",
+            state: booking.state || "State",
+            email: booking.emailId || "customer@example.com",
+            phone: booking.mobileNumber || "0000000000"
+          },
+          items: [{
+            productName: booking.mangoName?.name || "Booking Item",
+            product: booking.mangoName?._id || booking.mangoName || "ID",
+            quantity: booking.numberOfBoxes || 1,
+            productPrice: booking.productPrice || 100
+          }],
+          subtotal: booking.totalAmount || 100,
+          shippingCharges: 0,
+          discount: 0,
+          weight: 0.5
+        };
+
+        const shiprocketResponse = await createShiprocketOrder(dummyOrder);
+
+        if (shiprocketResponse) {
+          updateData.awbCode = shiprocketResponse.awbCode;
+          updateData.shiprocketOrderId = shiprocketResponse.providerOrderId;
+          updateData.shipmentId = shiprocketResponse.shipmentId;
+          updateData.courierName = shiprocketResponse.courierName;
+        }
+      } catch (srError) {
+        console.error("Failed to create Shiprocket order for booking:", srError);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to create Shiprocket order: " + srError.message
+        });
+      }
+    } else if (status === "cancelled" && booking.status !== "cancelled" && booking.shiprocketOrderId) {
+      try {
+        await cancelShiprocketOrder(booking.shiprocketOrderId);
+        console.log("Shiprocket order cancelled successfully for booking:", booking._id);
+      } catch (cancelError) {
+        console.error("Failed to cancel Shiprocket order:", cancelError);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to cancel Shiprocket order: " + cancelError.message
+        });
+      }
+    }
+
+    booking = await Booking.findByIdAndUpdate(
       req.params.id,
       updateData,
       { new: true, runValidators: true }
@@ -351,8 +416,8 @@ export const verifyBookingPaymentAndSave = async (req, res) => {
     const bookingData = { 
       ...bookingDetails,
       bookingNo: await generateBookingNo(),
-      paymentStatus: "paid",
-      status: "confirmed",
+      paymentStatus: "advance paid",
+      status: "order placed",
       transactionId: razorpay_payment_id,
       bookingAmountPaid: bookingDetails.bookingAmountPaid || "100",
     };
@@ -448,5 +513,84 @@ export const exportBookingsToExcel = async (req, res) => {
   } catch (error) {
     console.error("Export Excel error:", error);
     res.status(500).json({ success: false, message: "Export failed", error: error.message });
+  }
+};
+
+// @desc    Create Razorpay Order for remaining payment
+// @route   POST /api/bookings/create-remaining-payment-order
+// @access  Private
+export const createRemainingPaymentOrder = async (req, res) => {
+  try {
+    const { amount, currency = "INR", receipt } = req.body;
+
+    if (!amount) {
+      return res.status(400).json({ message: "Amount is required" });
+    }
+
+    const options = {
+      amount: Math.round(Number(amount) * 100),
+      currency,
+      receipt: receipt || `rem_pay_${Date.now()}`,
+    };
+
+    const order = await razorpay.orders.create(options);
+    
+    res.json({
+      success: true,
+      order,
+      key_id: process.env.RAZORPAY_KEY_ID,
+    });
+  } catch (err) {
+    console.error("createRemainingPaymentOrder error:", err);
+    res.status(500).json({ message: "Payment order creation failed" });
+  }
+};
+
+// @desc    Verify remaining payment signature and update DB
+// @route   POST /api/bookings/verify-remaining-payment
+// @access  Private
+export const verifyRemainingPayment = async (req, res) => {
+  try {
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      bookingId,
+    } = req.body;
+
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(body.toString())
+      .digest("hex");
+
+    if (expectedSignature !== razorpay_signature) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Payment verification failed" 
+      });
+    }
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    booking.paymentStatus = "full paid";
+    booking.transactionId = booking.transactionId ? booking.transactionId + ", " + razorpay_payment_id : razorpay_payment_id;
+    await booking.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Remaining payment verified successfully",
+      data: booking,
+    });
+  } catch (error) {
+    console.error("Error verifying remaining payment:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to verify remaining payment",
+      error: error.message,
+    });
   }
 };

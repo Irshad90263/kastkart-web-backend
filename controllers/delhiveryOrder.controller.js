@@ -45,7 +45,7 @@ export const createDelhiveryOrder = async (order) => {
     
     console.log("📥 Delhivery Response Raw:", JSON.stringify(res));
 
-    if (res.success && res.packages && res.packages.length > 0) {
+    if (res.success && res.packages && res.packages.length > 0 && res.packages[0].status !== "Fail") {
       const pkg = res.packages[0];
       console.log("✅ Delhivery order created:", pkg.waybill);
       
@@ -60,7 +60,16 @@ export const createDelhiveryOrder = async (order) => {
         created: true,
       };
     } else {
-      const errorMsg = res.errors?.join(", ") || res.rmk || "Failed to create Delhivery order";
+      let errorMsg = "";
+      if (res.packages && res.packages.length > 0) {
+        const failedPkg = res.packages.find(p => p.status === "Fail");
+        if (failedPkg && failedPkg.remarks && failedPkg.remarks.length > 0) {
+          errorMsg = failedPkg.remarks.join(", ");
+        }
+      }
+      if (!errorMsg) {
+        errorMsg = res.errors?.join(", ") || res.rmk || "Failed to create Delhivery order";
+      }
       console.error("❌ Delhivery API Error Detail:", errorMsg);
       throw new Error(errorMsg);
     }

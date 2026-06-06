@@ -139,7 +139,8 @@ export const placeOrder = async (req, res) => {
         order.status = "confirmed"; 
         console.log(`✅ ${selectedCourier} order created and confirmed:`, shippingResponse.awbCode);
       } else {
-        console.warn(`⚠️ ${selectedCourier} order created but AWB assignment failed. Status remains pending.`);
+        order.status = "order placed"; // Shipping created but AWB pending
+        console.warn(`⚠️ ${selectedCourier} order created but AWB assignment failed. Status set to 'order placed'.`);
         order.shippingError = "AWB Assignment Failed (Check Wallet Balance)";
       }
       order.shiprocketOrderId = shippingResponse.providerOrderId;
@@ -162,6 +163,7 @@ export const placeOrder = async (req, res) => {
       
       order.shippingError = shippingError.message;
       order.shiprocketError = shippingError.message; // Legacy
+      // Keep status as "order placed" — the default from schema
       await order.save();
     }
 
@@ -388,11 +390,19 @@ export const getOrderTracking = async (req, res) => {
 export const createManualShippingOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
+    console.log(`🚀 createManualShippingOrder called with orderId: ${orderId}`);
+    
     const order = await Order.findById(orderId).populate("items.product");
 
-    if (!order) return res.status(404).json({ message: "Order not found" });
+    if (!order) {
+      console.log(`❌ Order with ID ${orderId} was NOT found in the database.`);
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    console.log(`ℹ️ Order found: ID ${order._id}, selectedCourier: ${order.selectedCourier}, status: ${order.status}`);
 
     if (order.shippingDetails?.created || order.shiprocketCreated) {
+      console.log(`⚠️ Shipping order already created for orderId: ${orderId}`);
       return res.status(400).json({ message: "Shipping order already created" });
     }
 
@@ -405,6 +415,7 @@ export const createManualShippingOrder = async (req, res) => {
       order.shippingAddress.pincode,
       order.weight || 0.5
     );
+    console.log(`💰 Calculated new shipping charge: ${newShippingCharge} (current: ${order.shippingCharges})`);
 
     if (newShippingCharge !== order.shippingCharges) {
       order.shippingCharges = newShippingCharge;
@@ -415,7 +426,9 @@ export const createManualShippingOrder = async (req, res) => {
     }
 
     // Call the universal selector
+    console.log(`🚚 Calling createShippingOrder for provider ${provider}...`);
     const shippingResponse = await createShippingOrder(provider, order);
+    console.log(`📥 Received shippingResponse: ${JSON.stringify(shippingResponse)}`);
 
     // Update DB
     order.shippingDetails = shippingResponse;
@@ -437,6 +450,7 @@ export const createManualShippingOrder = async (req, res) => {
     }
 
     await order.save();
+    console.log(`✅ Order updated successfully in DB`);
 
     res.json({
       success: true,
@@ -445,7 +459,7 @@ export const createManualShippingOrder = async (req, res) => {
     });
   } catch (error) {
     const msg = error?.response?.data?.message || error?.message || "Manual shipping creation failed";
-    console.error("❌ Manual Shipping Error:", msg);
+    console.error(`❌ Manual Shipping Error: ${msg}\nError Stack: ${error.stack}`);
     res.status(500).json({ message: msg });
   }
 };

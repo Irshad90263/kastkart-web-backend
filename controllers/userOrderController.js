@@ -47,7 +47,7 @@ export const placeOrder = async (req, res) => {
         productName: item.product.name,
         productPrice: itemPrice,
         quantity: item.quantity,
-        size: item.size,
+        size: item.selectedWeight || item.size,
         color: item.color,
         addOnName: item.addOnName
       });

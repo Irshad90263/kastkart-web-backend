@@ -49,7 +49,7 @@ const productSchema = new mongoose.Schema(
     about: {
       ingredients: { type: String, default: "" },
       shelfLife: { type: String, default: "" },
-      netWeight: { type: String, default: "" },
+      netWeight: { type: [String], default: [] },
     },
 
     isActive: { type: Boolean, default: true },

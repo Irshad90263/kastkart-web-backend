@@ -30,7 +30,8 @@ export const getCart = async (req, res) => {
           items: {
             $push: {
               product: "$product",
-              quantity: "$items.quantity"
+              quantity: "$items.quantity",
+              selectedWeight: "$items.selectedWeight"
             }
           },
           totalAmount: {
@@ -71,7 +72,7 @@ export const getCart = async (req, res) => {
 // Add to Cart
 export const addToCart = async (req, res) => {
   try {
-    const { productId, quantity = 1} = req.body;
+    const { productId, quantity = 1, selectedWeight } = req.body;
 
     if (!productId) {
       return res.status(400).json({ message: "Product ID is required" });
@@ -89,13 +90,13 @@ export const addToCart = async (req, res) => {
 
     // Check if item already exists with same variant
     const existingItemIndex = cart.items.findIndex(item => 
-      item.product.toString() === productId
+      item.product.toString() === productId && item.selectedWeight === selectedWeight
     );
 
     if (existingItemIndex > -1) {
       cart.items[existingItemIndex].quantity += quantity;
     } else {
-      cart.items.push({ product: productId, quantity });
+      cart.items.push({ product: productId, quantity, selectedWeight });
     }
 
     await cart.save();

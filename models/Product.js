@@ -50,9 +50,17 @@ const productSchema = new mongoose.Schema(
       ingredients: { type: String, default: "" },
       shelfLife: { type: String, default: "" },
       netWeight: { type: [String], default: [] },
+      aboutHtml: { type: String, default: "" },
     },
 
     isActive: { type: Boolean, default: true },
+
+    relatedProducts: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Product",
+      },
+    ],
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );

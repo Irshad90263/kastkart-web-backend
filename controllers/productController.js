@@ -72,6 +72,7 @@ export const createProduct = async (req, res) => {
     }));
 
     const parsedAbout = parseMaybeJSON(about, {});
+    const parsedRelated = parseMaybeJSON(req.body.relatedProducts, []);
 
     const product = await Product.create({
       name,
@@ -90,7 +91,9 @@ export const createProduct = async (req, res) => {
         ingredients: parsedAbout.ingredients || "",
         shelfLife: parsedAbout.shelfLife || "",
         netWeight: parsedAbout.netWeight || "",
+        aboutHtml: parsedAbout.aboutHtml || "",
       },
+      relatedProducts: parsedRelated,
     });
 
     res.status(201).json({ message: "Product created", product });
@@ -191,8 +194,14 @@ export const getProduct = async (req, res) => {
   try {
     const { idOrSlug } = req.params;
     let product =
-      (await Product.findOne({ slug: idOrSlug }).populate("variety", "name slug").populate("category", "name")) ||
-      (await Product.findById(idOrSlug).populate("variety", "name slug").populate("category", "name"));
+      (await Product.findOne({ slug: idOrSlug })
+        .populate("variety", "name slug")
+        .populate("category", "name")
+        .populate("relatedProducts", "name price discountPercent finalPrice mainImage slug about")) ||
+      (await Product.findById(idOrSlug)
+        .populate("variety", "name slug")
+        .populate("category", "name")
+        .populate("relatedProducts", "name price discountPercent finalPrice mainImage slug about"));
     if (!product) return res.status(404).json({ message: "Product not found" });
     res.json({ product });
   } catch (err) {
@@ -395,12 +404,19 @@ export const updateProduct = async (req, res) => {
           parsedAbout.shelfLife ?? product.about.shelfLife ?? "",
         netWeight:
           parsedAbout.netWeight ?? product.about.netWeight ?? "",
+        aboutHtml:
+          parsedAbout.aboutHtml ?? product.about.aboutHtml ?? "",
       };
     }
 
     // active status
     if (isActive !== undefined) {
       product.isActive = !!isActive;
+    }
+
+    // related products
+    if (req.body.relatedProducts !== undefined) {
+      product.relatedProducts = parseMaybeJSON(req.body.relatedProducts, []);
     }
 
     // main image update

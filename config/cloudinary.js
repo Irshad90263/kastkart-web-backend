@@ -108,7 +108,10 @@ const productStorage = multer.diskStorage({
 
 const productMulter = multer({
   storage: productStorage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { 
+    fileSize: 10 * 1024 * 1024,
+    fieldSize: 50 * 1024 * 1024 // 50MB limit to allow large base64 image strings in text fields
+  },
   fileFilter: (req, file, cb) => {
     const allowed = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
     if (allowed.includes(file.mimetype)) return cb(null, true);

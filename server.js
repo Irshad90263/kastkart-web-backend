@@ -34,6 +34,7 @@ import orchardRoutes from "./routes/orchardRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
+import bulkOrderInquiryRoutes from "./routes/bulkOrderInquiryRoutes.js";
 
 
 
@@ -97,6 +98,7 @@ app.use("/api/shiprocket", shiprocketRoutes);
 app.use("/api/method", payMethodRoutes);
 app.use("/api/venders", venderRoutes);
 app.use("/api/corporate-inquiry", corporateInquiryRoutes);
+app.use("/api/bulk-order", bulkOrderInquiryRoutes);
 app.use("/api/delivery", deliveyRoutes);
 app.use("/api/orchards", orchardRoutes);
 app.use("/api/bookings", bookingRoutes);

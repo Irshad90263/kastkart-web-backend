@@ -33,6 +33,7 @@ import corporateInquiryRoutes from "./routes/corporateInquiryRoutes.js";
 import orchardRoutes from "./routes/orchardRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
+import reviewRoutes from "./routes/reviewRoutes.js";
 
 
 
@@ -100,6 +101,7 @@ app.use("/api/delivery", deliveyRoutes);
 app.use("/api/orchards", orchardRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/product-categories", categoryRoutes);
+app.use("/api/reviews", reviewRoutes);
 
 
 

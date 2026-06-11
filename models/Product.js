@@ -60,6 +60,9 @@ const productSchema = new mongoose.Schema(
 
     isActive: { type: Boolean, default: true },
 
+    ratingsAverage: { type: Number, default: 0 },
+    ratingsQuantity: { type: Number, default: 0 },
+
     relatedProducts: [
       {
         type: mongoose.Schema.Types.ObjectId,

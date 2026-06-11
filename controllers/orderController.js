@@ -66,14 +66,24 @@ export const placeOrder = async (req, res) => {
         return res.status(400).json({ message: `Invalid productId: ${item.productId}` });
       }
 
+      let itemPrice = 0;
+      if (product.weightOptions && product.weightOptions.length > 0) {
+        let option = product.weightOptions.find(wo => wo.weight === item.size);
+        if (!option) option = product.weightOptions[0]; // fallback
+        if (option) {
+          const discount = product.discountPercent || 0;
+          itemPrice = Math.round(option.price * (1 - discount / 100));
+        }
+      }
+
       const qty = Number(item.quantity || 1);
-      const linePrice = product.finalPrice * qty;
+      const linePrice = itemPrice * qty;
       subtotal += linePrice;
 
       itemsForOrder.push({
         product: product._id,
         productName: product.name,
-        productPrice: product.finalPrice,
+        productPrice: itemPrice,
         quantity: qty,
         size: item.size,
         color: item.color,

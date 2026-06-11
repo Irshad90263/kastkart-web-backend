@@ -38,9 +38,14 @@ const productSchema = new mongoose.Schema(
       ref: "Vendor",
     },
 
-    price: { type: Number, required: true, min: 0 },
+    weightOptions: [
+      {
+        weight: { type: String, required: true },
+        price: { type: Number, required: true },
+      }
+    ],
+
     discountPercent: { type: Number, default: 0, min: 0, max: 100 },
-    finalPrice: { type: Number, default: 0 },
 
     mainImage: { type: imageSchema, required: true },
     galleryImages: [imageSchema],
@@ -74,10 +79,7 @@ productSchema.pre("save", function (next) {
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/(^-|-$)+/g, "") + "-" + Date.now();
   }
-
-  const discount = this.discountPercent || 0;
-  this.finalPrice = Math.round(this.price * (1 - discount / 100));
-
+  
   if (!this.addOns || this.addOns.length === 0) {
     this.addOns = [{ name: "None", price: 0, isDefault: true }];
   } else {

@@ -38,7 +38,17 @@ export const placeOrder = async (req, res) => {
         return res.status(400).json({ message: `Product ${item.product?.name || 'unknown'} is not available` });
       }
 
-      const itemPrice = item.product.finalPrice + item.addOnPrice;
+      let baseItemPrice = 0;
+      if (item.product.weightOptions && item.product.weightOptions.length > 0) {
+        let option = item.product.weightOptions.find(wo => wo.weight === item.selectedWeight);
+        if (!option) option = item.product.weightOptions[0]; // fallback
+        if (option) {
+          const discount = item.product.discountPercent || 0;
+          baseItemPrice = Math.round(option.price * (1 - discount / 100));
+        }
+      }
+
+      const itemPrice = baseItemPrice + (item.addOnPrice || 0);
       const itemTotal = itemPrice * item.quantity;
       subtotal += itemTotal;
 

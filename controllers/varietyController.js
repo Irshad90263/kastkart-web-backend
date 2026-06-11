@@ -10,9 +10,18 @@ const __dirname = path.dirname(__filename);
 
 export const createVariety = async (req, res) => {
   try {
-    const { name, description, category } = req.body;
+    let { name, description, category } = req.body;
     if (!name) return res.status(400).json({ message: "name is required" });
     if (!category) return res.status(400).json({ message: "category is required" });
+
+    // Normalize category to an array
+    let categoriesArray = category;
+    if (typeof category === 'string') {
+      try { categoriesArray = JSON.parse(category); }
+      catch (e) { categoriesArray = [category]; }
+    }
+    if (!Array.isArray(categoriesArray)) categoriesArray = [categoriesArray];
+    category = categoriesArray;
 
     const exists = await Variety.findOne({ name });
     if (exists) return res.status(409).json({ message: "Variety exists" });
@@ -34,7 +43,7 @@ export const createVariety = async (req, res) => {
     res.status(201).json({ message: "Variety created", category: variety, variety });
   } catch (err) {
     console.error("createVariety error:", err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "CONTROLLER_ERROR: " + err.message, stack: err.stack });
   }
 };
 
@@ -45,11 +54,11 @@ export const listVarieties = async (req, res) => {
     if (status === 'active') filter = { isActive: true };
     if (status === 'inactive') filter = { isActive: false };
     
-    const varieties = await Variety.find(filter).populate("category").sort({ name: 1 });
+    const varieties = await Variety.find(filter).populate("category").sort({ createdAt: -1 });
     res.json({ categories: varieties, varieties });
   } catch (err) {
     console.error("listVarieties error:", err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: err.message, stack: err.stack });
   }
 };
 
@@ -63,7 +72,7 @@ export const getVariety = async (req, res) => {
     res.json({ category: variety, variety });
   } catch (err) {
     console.error("getVariety error:", err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: err.message, stack: err.stack });
   }
 };
 
@@ -75,7 +84,7 @@ export const updateVariety = async (req, res) => {
       (await Variety.findById(idOrSlug));
     if (!variety) return res.status(404).json({ message: "Not found" });
 
-    const { name, description, isActive, removeImage, category } = req.body;
+    let { name, description, isActive, removeImage, category } = req.body;
 
     if (name) {
       variety.name = name;
@@ -87,7 +96,16 @@ export const updateVariety = async (req, res) => {
     }
     if (description !== undefined) variety.description = description;
     if (isActive !== undefined) variety.isActive = !!isActive;
-    if (category !== undefined) variety.category = category;
+    
+    if (category !== undefined) {
+      let categoriesArray = category;
+      if (typeof category === 'string') {
+        try { categoriesArray = JSON.parse(category); }
+        catch (e) { categoriesArray = [category]; }
+      }
+      if (!Array.isArray(categoriesArray)) categoriesArray = [categoriesArray];
+      variety.category = categoriesArray;
+    }
 
     if (removeImage === 'true' || removeImage === true) {
       if (variety.image && variety.image.filename) {
@@ -116,7 +134,7 @@ export const updateVariety = async (req, res) => {
     res.json({ message: "Variety updated", category: variety, variety });
   } catch (err) {
     console.error("updateVariety error:", err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: err.message, stack: err.stack });
   }
 };
 
@@ -148,6 +166,6 @@ export const deleteVariety = async (req, res) => {
     res.json({ message: "Variety deleted" });
   } catch (err) {
     console.error("deleteVariety error:", err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: err.message, stack: err.stack });
   }
 };

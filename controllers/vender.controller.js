@@ -87,10 +87,11 @@ export const createVendor = async (req, res) => {
         url: `${baseUrl}/uploads/venders/${file.filename}`,
         publicId: file.filename
       };
-    } else {
-      // Schema marks growerSignature.publicId as required
-      return res.status(400).json({ success: false, message: "Grower signature is required" });
-    }
+    } 
+    // else {
+    //   // Schema marks growerSignature.publicId as required
+    //   return res.status(400).json({ success: false, message: "Grower signature is required" });
+    // }
 
     let orchardImages = [];
     if (req.files && req.files.orchardImages) {

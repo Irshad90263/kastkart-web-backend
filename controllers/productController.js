@@ -31,19 +31,19 @@ export const createProduct = async (req, res) => {
   try {
     const {
       name,
-      price,
       discountPercent,
       description,
       about,
       categoryId,
       varietyId,
       vendor_id,
+      weightOptions,
     } = req.body;
 
-    if (!name || !price || !varietyId || !categoryId) {
+    if (!name || !varietyId || !categoryId) {
       return res
         .status(400)
-        .json({ message: "name, price, varietyId, and categoryId are required" });
+        .json({ message: "name, varietyId, and categoryId are required" });
     }
 
     const variety = await Variety.findById(varietyId);
@@ -73,12 +73,12 @@ export const createProduct = async (req, res) => {
 
     const parsedAbout = parseMaybeJSON(about, {});
     const parsedRelated = parseMaybeJSON(req.body.relatedProducts, []);
+    const parsedWeightOptions = parseMaybeJSON(weightOptions, []);
 
     const product = await Product.create({
       name,
       variety: variety._id,
       category: category._id,
-      price: Number(price),
       discountPercent: Number(discountPercent || 0),
       mainImage: {
         url: mainImageUrl,
@@ -90,9 +90,10 @@ export const createProduct = async (req, res) => {
       about: {
         ingredients: parsedAbout.ingredients || "",
         shelfLife: parsedAbout.shelfLife || "",
-        netWeight: parsedAbout.netWeight || "",
+        netWeight: parsedWeightOptions.map(wo => wo.weight),
         aboutHtml: parsedAbout.aboutHtml || "",
       },
+      weightOptions: parsedWeightOptions,
       relatedProducts: parsedRelated,
     });
 
@@ -135,20 +136,15 @@ export const listProducts = async (req, res) => {
       ];
     }
 
-    // Price filter based on finalPrice
-    if (minPrice !== undefined || maxPrice !== undefined) {
-      filter.finalPrice = {};
-      if (minPrice) filter.finalPrice.$gte = Number(minPrice);
-      if (maxPrice) filter.finalPrice.$lte = Number(maxPrice);
-    }
+
 
     // Sorting
     let sortOption = { createdAt: -1 };
 
     if (sort === "price_asc") {
-      sortOption = { finalPrice: 1 };
+      sortOption = { "weightOptions.price": 1 };
     } else if (sort === "price_desc") {
-      sortOption = { finalPrice: -1 };
+      sortOption = { "weightOptions.price": -1 };
     } else if (sort === "newest") {
       sortOption = { createdAt: -1 };
     } else if (sort === "oldest") {
@@ -197,11 +193,13 @@ export const getProduct = async (req, res) => {
       (await Product.findOne({ slug: idOrSlug })
         .populate("variety", "name slug")
         .populate("category", "name")
-        .populate("relatedProducts", "name price discountPercent finalPrice mainImage slug about")) ||
+        .populate("vendor_id", "name photo residentialAddress vendorDesignation")
+        .populate("relatedProducts", "name weightOptions discountPercent mainImage slug about")) ||
       (await Product.findById(idOrSlug)
         .populate("variety", "name slug")
         .populate("category", "name")
-        .populate("relatedProducts", "name price discountPercent finalPrice mainImage slug about"));
+        .populate("vendor_id", "name photo residentialAddress vendorDesignation")
+        .populate("relatedProducts", "name weightOptions discountPercent mainImage slug about"));
     if (!product) return res.status(404).json({ message: "Product not found" });
     res.json({ product });
   } catch (err) {
@@ -258,19 +256,19 @@ export const listProductsByCategory = async (req, res) => {
       filter.variety = { $in: varietyIds };
     }
 
-    // Price filter based on finalPrice
+    // Price filter based on weightOptions.price
     if (minPrice !== undefined || maxPrice !== undefined) {
-      filter.finalPrice = {};
-      if (minPrice) filter.finalPrice.$gte = Number(minPrice);
-      if (maxPrice) filter.finalPrice.$lte = Number(maxPrice);
+      filter["weightOptions.price"] = {};
+      if (minPrice) filter["weightOptions.price"].$gte = Number(minPrice);
+      if (maxPrice) filter["weightOptions.price"].$lte = Number(maxPrice);
     }
 
     // SORTING
     let sortOption = {};
     if (sort === "price_asc") {
-      sortOption = { finalPrice: 1 };
+      sortOption = { "weightOptions.price": 1 };
     } else if (sort === "price_desc") {
-      sortOption = { finalPrice: -1 };
+      sortOption = { "weightOptions.price": -1 };
     } else if (sort === "newest") {
       sortOption = { createdAt: -1 };
     } else if (sort === "oldest") {
@@ -342,6 +340,7 @@ export const updateProduct = async (req, res) => {
       varietyId,
       isActive,
       vendor_id,
+      weightOptions,
     } = req.body;
 
     // name + slug
@@ -399,14 +398,21 @@ export const updateProduct = async (req, res) => {
       const parsedAbout = parseMaybeJSON(about, {});
       product.about = {
         ingredients:
-          parsedAbout.ingredients ?? product.about.ingredients ?? "",
+          parsedAbout.ingredients ?? product.about?.ingredients ?? "",
         shelfLife:
-          parsedAbout.shelfLife ?? product.about.shelfLife ?? "",
-        netWeight:
-          parsedAbout.netWeight ?? product.about.netWeight ?? "",
+          parsedAbout.shelfLife ?? product.about?.shelfLife ?? "",
+        netWeight: product.about?.netWeight,
         aboutHtml:
-          parsedAbout.aboutHtml ?? product.about.aboutHtml ?? "",
+          parsedAbout.aboutHtml ?? product.about?.aboutHtml ?? "",
       };
+    }
+    
+    if (weightOptions !== undefined) {
+      const parsedWeightOptions = parseMaybeJSON(weightOptions, []);
+      product.weightOptions = parsedWeightOptions;
+      if (product.about) {
+        product.about.netWeight = parsedWeightOptions.map((wo) => wo.weight);
+      }
     }
 
     // active status

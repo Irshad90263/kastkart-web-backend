@@ -73,12 +73,22 @@ export const verifyPaymentAndCreateOrder = async (req, res) => {
     // Calculate totals
     let subtotal = 0;
     const orderItems = cart.items.map(item => {
-      const itemTotal = item.product.finalPrice * item.quantity;
+      let itemPrice = 0;
+      if (item.product.weightOptions && item.product.weightOptions.length > 0) {
+        let option = item.product.weightOptions.find(wo => wo.weight === item.selectedWeight);
+        if (!option) option = item.product.weightOptions[0]; // fallback
+        if (option) {
+          const discount = item.product.discountPercent || 0;
+          itemPrice = Math.round(option.price * (1 - discount / 100));
+        }
+      }
+
+      const itemTotal = itemPrice * item.quantity;
       subtotal += itemTotal;
       return {
         product: item.product._id,
         productName: item.product.name,
-        productPrice: item.product.finalPrice,
+        productPrice: itemPrice,
         quantity: item.quantity,
       };
     });

@@ -113,7 +113,7 @@ export const getAllBookings = async (req, res) => {
       .populate("mangoVariety", "name slug")
       .populate({
         path: "mangoName",
-        select: "name slug finalPrice mainImage vendor_id",
+        select: "name slug weightOptions discountPercent mainImage vendor_id",
         populate: {
           path: "vendor_id",
           select: "name contactDetails"
@@ -154,7 +154,7 @@ export const getBookingById = async (req, res) => {
       .populate("mangoVariety", "name slug")
       .populate({
         path: "mangoName",
-        select: "name slug finalPrice mainImage vendor_id",
+        select: "name slug weightOptions discountPercent mainImage vendor_id",
         populate: {
           path: "vendor_id",
           select: "name contactDetails"
@@ -199,7 +199,7 @@ export const getUserBookings = async (req, res) => {
     const bookings = await Booking.find({ userId })
       .populate("mangoCategory", "name")
       .populate("mangoVariety", "name slug")
-      .populate("mangoName", "name slug finalPrice mainImage")
+      .populate("mangoName", "name slug weightOptions discountPercent mainImage")
       .sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -300,7 +300,7 @@ export const updateBookingStatus = async (req, res) => {
       .populate("mangoVariety", "name slug")
       .populate({
         path: "mangoName",
-        select: "name slug finalPrice mainImage vendor_id",
+        select: "name slug weightOptions discountPercent mainImage vendor_id",
         populate: {
           path: "vendor_id",
           select: "name contactDetails"
@@ -463,7 +463,7 @@ export const exportBookingsToExcel = async (req, res) => {
       .populate("mangoVariety", "name slug")
       .populate({
         path: "mangoName",
-        select: "name slug finalPrice mainImage vendor_id",
+        select: "name slug weightOptions discountPercent mainImage vendor_id",
         populate: {
           path: "vendor_id",
           select: "name contactDetails"

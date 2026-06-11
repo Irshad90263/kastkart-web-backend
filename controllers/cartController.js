@@ -2,64 +2,44 @@
 import Cart from "../models/Cart.js";
 import Product from "../models/Product.js";
 
-// Get Cart
 export const getCart = async (req, res) => {
   try {
     const userId = req.user.sub;
 
-    const cartAgg = await Cart.aggregate([
-      { $match: { user: new mongoose.Types.ObjectId(userId) } },
+    let cart = await Cart.findOne({ user: userId }).populate("items.product");
 
-      { $unwind: "$items" },
-
-      {
-        $lookup: {
-          from: "products",
-          localField: "items.product",
-          foreignField: "_id",
-          as: "product"
-        }
-      },
-
-      { $unwind: "$product" },
-
-      {
-        $group: {
-          _id: "$_id",
-          user: { $first: "$user" },
-          items: {
-            $push: {
-              product: "$product",
-              quantity: "$items.quantity",
-              selectedWeight: "$items.selectedWeight"
-            }
-          },
-          totalAmount: {
-            $sum: {
-              $multiply: ["$product.finalPrice", "$items.quantity"]
-            }
-          },
-          totalItems: {
-            $sum: "$items.quantity"
-          }
-        }
-      }
-    ]);
-
-    if (!cartAgg.length) {
+    if (!cart) {
       return res.json({ cart: { items: [], totalAmount: 0, totalItems: 0 } });
     }
 
-    // persist totalAmount safely
-    await Cart.updateOne(
-      { _id: cartAgg[0]._id },
-      {
-        totalAmount: cartAgg[0].totalAmount,
-        totalItems: cartAgg[0].totalItems
-      }
-    );
+    let totalAmount = 0;
+    let totalItems = 0;
 
-    res.json({ cart: cartAgg[0] });
+    const validItems = cart.items.filter(item => {
+      if (!item.product) return false;
+      
+      let itemPrice = 0;
+      if (item.product.weightOptions && item.product.weightOptions.length > 0) {
+        let option = item.product.weightOptions.find(wo => wo.weight === item.selectedWeight);
+        if (!option) option = item.product.weightOptions[0]; // Fallback to first option
+        
+        if (option) {
+          const discount = item.product.discountPercent || 0;
+          itemPrice = Math.round(option.price * (1 - discount / 100));
+        }
+      }
+
+      totalAmount += itemPrice * item.quantity;
+      totalItems += item.quantity;
+      return true;
+    });
+
+    cart.items = validItems;
+    cart.totalAmount = totalAmount;
+    cart.totalItems = totalItems;
+    await cart.save();
+
+    res.json({ cart });
   } catch (err) {
     console.error("getCart error:", err);
     res.status(500).json({ message: "Server error" });
@@ -193,7 +173,18 @@ export const getCartTotal = async (req, res) => {
     const validItems = cart.items.filter(item => {
       if (!item.product || !item.product.isActive) return false;
 
-      totalAmount += item.product.finalPrice * item.quantity;
+      let itemPrice = 0;
+      if (item.product.weightOptions && item.product.weightOptions.length > 0) {
+        let option = item.product.weightOptions.find(wo => wo.weight === item.selectedWeight);
+        if (!option) option = item.product.weightOptions[0]; // Fallback
+        
+        if (option) {
+          const discount = item.product.discountPercent || 0;
+          itemPrice = Math.round(option.price * (1 - discount / 100));
+        }
+      }
+
+      totalAmount += itemPrice * item.quantity;
       return true;
     });
 

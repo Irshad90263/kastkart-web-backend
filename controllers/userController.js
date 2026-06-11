@@ -89,9 +89,15 @@ export const loginUser = async (req, res) => {
       return res.status(400).json({ message: "Phone number is required" });
     }
 
-    const user = await User.findOne({ phone }).select("+tokenVersion");
+    let user = await User.findOne({ phone }).select("+tokenVersion");
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      // Auto-register new user
+      user = await User.create({
+        phone,
+        firstName: "Kashtkart",
+        lastName: "User",
+        email: `user${phone}@kashtkart.com`,
+      });
     }
 
     // -------------------------
@@ -167,6 +173,7 @@ export const updateProfile = async (req, res) => {
       // profile fields
       firstName,
       lastName,
+      email,
       phone,
       dateOfBirth,
       gender,
@@ -196,6 +203,7 @@ export const updateProfile = async (req, res) => {
       if (
         firstName ||
         lastName ||
+        email ||
         phone ||
         dateOfBirth ||
         gender ||
@@ -244,6 +252,19 @@ export const updateProfile = async (req, res) => {
     // =========================
     if (firstName) user.firstName = firstName;
     if (lastName) user.lastName = lastName;
+    if (email) {
+      const emailExists = await User.findOne({
+        email,
+        _id: { $ne: user._id },
+      }).lean();
+
+      if (emailExists) {
+        return res.status(409).json({
+          message: "Email address already exists",
+        });
+      }
+      user.email = email;
+    }
 
     if (phone) {
       const phoneExists = await User.findOne({

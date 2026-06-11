@@ -178,7 +178,7 @@ const vendorSchema = new mongoose.Schema(
     // Signature
     growerSignature: {
       url: { type: String, default: "" },
-      publicId: { type: String, required: true },
+      publicId: { type: String, required: false },
     },
 
     signedDate: {

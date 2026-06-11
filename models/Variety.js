@@ -5,7 +5,7 @@ const varietySchema = new mongoose.Schema(
   {
     name: { type: String, required: true, unique: true, trim: true },
     slug: { type: String, unique: true, index: true },
-    category: { type: mongoose.Schema.Types.ObjectId, ref: "Category", required: true },
+    category: [{ type: mongoose.Schema.Types.ObjectId, ref: "Category" }],
     description: { type: String, default: "" },
     isActive: { type: Boolean, default: true },
     image: {
